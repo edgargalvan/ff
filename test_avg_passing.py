@@ -2,8 +2,8 @@ import nfldb
 import matplotlib.pyplot as plt
 import numpy as np
 
-which_name = 'Cam Newton'
-which_team = 'CAR'
+which_name = 'Matthew Stafford'
+which_team = 'DET'
 which_year = 2014
 
 
