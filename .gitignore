@@ -1,5 +1,18 @@
 # the database
 nfldb.sql
 
-# emacs backups
+## OS X files
+/.DS_Store
+/Desktop.ini
+
+## Emacs
 *~
+*.el
+\#*
+\.#*
+*#
+auto/ # not sure if this is the right syntax
+
+
+## Octave
+octave-workspace
