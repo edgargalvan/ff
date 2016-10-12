@@ -1,9 +1,13 @@
+
 import nfldb
 import numpy as np
 from config import *
 
 class ff_stats:
     def __init__(self,name,team,season_type,season_year):
+        # start up db
+        db = nfldb.connect()
+        q = nfldb.Query(db)
 
         # player info
         self.full_name = ''
@@ -12,47 +16,47 @@ class ff_stats:
         self.player_id = ''
             
         # stats we wish to track for ff
-        self.passing_yds = 0
-        self.passing_tds = 0
-        self.rushing_yds = 0
-        self.rushing_tds = 0
-        self.receiving_yds = 0
-        self.receiving_tds = 0
-        self.kickret_tds = 0
-        self.puntret_tds = 0
-        self.passing_twoptm = 0
-        self.rushing_twoptm = 0
-        self.receiving_twoptm = 0
-        self.fumbles_lost = 0
-        self.fumbles_rec_tds = 0
-        self.kicking_xpmade = 0
+        self.passing_yds = []
+        self.passing_tds = []
+        self.rushing_yds = []
+        self.rushing_tds = []
+        self.receiving_yds = []
+        self.receiving_tds = []
+        self.kickret_tds = []
+        self.puntret_tds = []
+        self.passing_twoptm = []
+        self.rushing_twoptm = []
+        self.receiving_twoptm = []
+        self.fumbles_lost = []
+        self.fumbles_rec_tds = []
+        self.kicking_xpmade = []
 
         # kicker
-        self.kicking_fgm_0_39 = 0
-        self.kicking_fgm_40_49 = 0
-        self.kicking_fgm_50_100 = 0
+        self.kicking_fgm_0_39 = []
+        self.kicking_fgm_40_49 = []
+        self.kicking_fgm_50_100 = []
 
         # defense
-        self.defense_sk = 0
-        self.defense_int = 0
-        self.defense_frec = 0
-        self.defense_int_tds = 0
-        self.defense_misc_tds = 0
-        self.defense_safe = 0
-        self.defense_fgblk = 0
+        self.defense_sk = []
+        self.defense_int = []
+        self.defense_frec = []
+        self.defense_int_tds = []
+        self.defense_misc_tds = []
+        self.defense_safe = []
+        self.defense_fgblk = []
 
         # defense points against (not sure how to handle this just yet)
-        self.defense_pa_35_100 = 0
-        self.defense_pa_28_34 = 0
-        self.defense_pa_21_27 = 0
-        self.defense_pa_14_20 = 0
-        self.defense_pa_7_13 = 0
-        self.defense_pa_1_6 = 0
-        self.defense_pa_0_0 = 0
-
+        self.defense_pa_35_100 = []
+        self.defense_pa_28_34 = []
+        self.defense_pa_21_27 = []
+        self.defense_pa_14_20 = []
+        self.defense_pa_7_13 = []
+        self.defense_pa_1_6 = []
+        self.defense_pa_0_0 = []
+        
         # games we're interested in
         games = q.game(season_year=season_year, season_type=season_type, team=team)
-
+        
         # find the player and games we care about
         if name=='DEF':
             self.full_name = 'DEF'
@@ -69,7 +73,7 @@ class ff_stats:
             for attr, value in self.__dict__.iteritems():
                 if hasattr(dummy, attr):
                     setattr(self, attr, getattr(dummy,attr)) 
-        
+
         for gg in player_games.as_games():
             # add game statistics
             self.update_game(gg)
@@ -86,10 +90,10 @@ class ff_stats:
     def update_play(self,obj):
         # update matching statistics
         for attr, value in self.__dict__.iteritems():
-            if hasattr(obj, attr):
-                if isinstance(getattr(obj,attr), (int, float)):
-                    new_value = getattr(self,attr) + getattr(obj,attr) # temp var
-                    setattr(self, attr, new_value) 
+            if isinstance(getattr(self,attr), list):
+                if hasattr(obj, attr):
+                    getattr(self,attr)[-1] += getattr(obj,attr)
+
         # update kicking stats
         if hasattr(obj,'kicking_fgm_yds'):
             if obj.kicking_fgm_yds >=50:
@@ -102,6 +106,10 @@ class ff_stats:
 
     # update with nfldb game statistics (only game stat of interest is final score)
     def update_game(self,obj):
+        # append a new value for each entry
+        for attr, value in self.__dict__.iteritems():
+            if isinstance(getattr(self,attr), list):
+                getattr(self,attr).append(0)
         # only keep track of this if player is DEF
         if self.full_name=='DEF':
             if obj.away_team==self.team:
@@ -126,21 +134,21 @@ class ff_stats:
                 
         return self
 
-
-# start up db
-db = nfldb.connect()
-q = nfldb.Query(db)
-
 # input
 name = 'Matt Ryan'
 team = 'ATL'
 season_type = 'Regular'
 season_year = 2015
 
-a = ff_stats(name,team,season_type,season_year)
-print a.passing_yds
+passing_yds = []
+for season_year in range(2011, 2014):
+    a = ff_stats(name,team,season_type,season_year)
+    passing_yds.append( a.passing_yds)
+
+print passing_yds
+
 # Alternatively if we just want the aggregated stats, it's pretty easy
-#player_games_agg = player_games.as_aggregate()[0]
+#player_games_agg = player_games.as_aggregate()[]
 #print player_games_agg.passing_yds
 
 # do this if player is defense
