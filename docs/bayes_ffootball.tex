@@ -1,0 +1,60 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath} % equations
+\usepackage{amsfonts} % sweet fonts
+\usepackage{parskip} % Adds spacing between paragraphs
+%\usepackage[mathscr]{euscript} % extra meth stuff
+\usepackage{mathrsfs}
+%\usepackage{enumerate} % make lettered lists
+\usepackage{cite} % citations
+\usepackage{nomencl}
+\makenomenclature
+\usepackage{graphicx}
+\usepackage{booktabs} % To thicken table lines
+
+\title{Hierarchical Bayesian Model for Fantasy Football}
+\author{Cool Company Name}
+
+\begin{document}
+\bibliographystyle{ieeetr}
+\maketitle 
+\setlength{\parindent}{0ex}
+
+\section{Hierarchical Bayes}
+See \cite{baio2010bayesian}
+\section{Basic Model}
+\printnomenclature
+\nomenclature{$T$}{Number of teams}
+\nomenclature{$G$}{Total number of games played}
+\nomenclature{$t$}{Team index}
+\nomenclature{$g$}{Game index}
+\nomenclature{$i$}{Index corresponding to home and away team, 1 and 2, respectively}
+\nomenclature{$y_{gi}$}{Passing yards of quarterback for game $g$}
+\nomenclature{$\theta_{gi}$}{Passing intensity}
+% \nomenclature{$$}{}
+ \
+
+
+
+ \begin{table}
+   \centering
+   \begin{tabular}{l l}
+     \toprule
+     Observable & $y_{gi}$ \\
+     Unobservable & $\theta_{gi}$ \\
+     Unit of performance & Expected performance\\
+     Distribution of $p(\theta_{gi})$ & Poisson\\
+     Distribution of $p(y_{gi} | \theta_{gi})$ & Poisson?\\     
+     \bottomrule
+   \end{tabular}
+   \caption{Summary of Modeling Assumptions}
+   \label{table:ma1}
+ \end{table}
+
+\bibliography{ref}{}
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
+\grid
