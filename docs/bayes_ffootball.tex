@@ -33,6 +33,7 @@ See \cite{baio2010bayesian}
 % \nomenclature{$$}{}
  \
 
+ We start assuming that we only care about total passing yards by each team. Further, we will ignore, for the moment, that the players on a team may change from one game to the next. Table \ref{table:ma1} is a list of basic assumptions made in the current model.
 
 
  \begin{table}
@@ -42,13 +43,53 @@ See \cite{baio2010bayesian}
      Observable & $y_{gi}$ \\
      Unobservable & $\theta_{gi}$ \\
      Unit of performance & Expected performance\\
-     Distribution of $p(\theta_{gi})$ & Poisson\\
-     Distribution of $p(y_{gi} | \theta_{gi})$ & Poisson?\\     
+     Distribution of $theta_{gi}$ & $\sim$ Poisson\\
+     Distribution of $y_{gi} | \theta_{gi}$ & $\sim$ Poisson?\\     
      \bottomrule
    \end{tabular}
    \caption{Summary of Modeling Assumptions}
    \label{table:ma1}
  \end{table}
+
+
+Assume a log-linear random effect model
+
+\begin{equation}
+  \label{eq:4}
+  \begin{aligned}
+   & \log{\theta_{g1}} = home_{h(g)} + att_{h(g)} + def_{a(g)}  \\
+   & \log{\theta_{g2}} = att_{a(g)} + def_{h(g)} 
+  \end{aligned}
+\end{equation}
+
+Where $home$ is the home advantage parameter. The passing intensity, $\theta$ is determined by the attack (offense) and defensive strengths of the teams. The model data structure consists of the game week and id, home and away teams, and total passing yards. An example table is presented in Table \ref{table:data-tab}.
+
+
+ \begin{table}[h!]
+   \centering
+   \begin{tabular}{c c c c l l}
+     \toprule
+     Game ID & Week & Home Team & Away Team & $y_{g1}$ & $y_{g2}$  \\
+     1   &  1 & DEN & HOU & 282 & 187\\
+     2   &  1 & WAS & MAI & 253 & 237\\
+     $\ldots$ & $\ldots$  & $\ldots$ & $\ldots$ & $\ldots$ & $\ldots$\\
+     254 & 17 & MAI & OAK & 237 & 311\\
+     256 & 17 & CHI & DAL & 153 & 220\\     
+     \bottomrule
+   \end{tabular}
+   \caption{Example data table}
+   \label{table:data-tab}
+ \end{table}
+
+We model the home advantage for each team as a fixed effect according to the distribution
+\begin{equation}
+  \label{eq:5}
+  home_{t} \sim \text{Normal}(\mu_r,\sigma^2_t)
+\end{equation}
+
+where $\mu_t$ and $\sigma_t$ are determined according to historical data for each team $t$. 
+
+
 
 \bibliography{ref}{}
 \end{document}
