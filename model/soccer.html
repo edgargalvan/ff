@@ -1,0 +1,531 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+<title>soccer</title>
+<!-- 2016-12-06 Tue 23:55 -->
+<meta  http-equiv="Content-Type" content="text/html;charset=utf-8" />
+<meta  name="generator" content="Org-mode" />
+<meta  name="author" content="Edgar Galvan" />
+<style type="text/css">
+ <!--/*--><![CDATA[/*><!--*/
+  .title  { text-align: center; }
+  .todo   { font-family: monospace; color: red; }
+  .done   { color: green; }
+  .tag    { background-color: #eee; font-family: monospace;
+            padding: 2px; font-size: 80%; font-weight: normal; }
+  .timestamp { color: #bebebe; }
+  .timestamp-kwd { color: #5f9ea0; }
+  .right  { margin-left: auto; margin-right: 0px;  text-align: right; }
+  .left   { margin-left: 0px;  margin-right: auto; text-align: left; }
+  .center { margin-left: auto; margin-right: auto; text-align: center; }
+  .underline { text-decoration: underline; }
+  #postamble p, #preamble p { font-size: 90%; margin: .2em; }
+  p.verse { margin-left: 3%; }
+  pre {
+    border: 1px solid #ccc;
+    box-shadow: 3px 3px 3px #eee;
+    padding: 8pt;
+    font-family: monospace;
+    overflow: auto;
+    margin: 1.2em;
+  }
+  pre.src {
+    position: relative;
+    overflow: visible;
+    padding-top: 1.2em;
+  }
+  pre.src:before {
+    display: none;
+    position: absolute;
+    background-color: white;
+    top: -10px;
+    right: 10px;
+    padding: 3px;
+    border: 1px solid black;
+  }
+  pre.src:hover:before { display: inline;}
+  pre.src-sh:before    { content: 'sh'; }
+  pre.src-bash:before  { content: 'sh'; }
+  pre.src-emacs-lisp:before { content: 'Emacs Lisp'; }
+  pre.src-R:before     { content: 'R'; }
+  pre.src-perl:before  { content: 'Perl'; }
+  pre.src-java:before  { content: 'Java'; }
+  pre.src-sql:before   { content: 'SQL'; }
+
+  table { border-collapse:collapse; }
+  caption.t-above { caption-side: top; }
+  caption.t-bottom { caption-side: bottom; }
+  td, th { vertical-align:top;  }
+  th.right  { text-align: center;  }
+  th.left   { text-align: center;   }
+  th.center { text-align: center; }
+  td.right  { text-align: right;  }
+  td.left   { text-align: left;   }
+  td.center { text-align: center; }
+  dt { font-weight: bold; }
+  .footpara:nth-child(2) { display: inline; }
+  .footpara { display: block; }
+  .footdef  { margin-bottom: 1em; }
+  .figure { padding: 1em; }
+  .figure p { text-align: center; }
+  .inlinetask {
+    padding: 10px;
+    border: 2px solid gray;
+    margin: 10px;
+    background: #ffffcc;
+  }
+  #org-div-home-and-up
+   { text-align: right; font-size: 70%; white-space: nowrap; }
+  textarea { overflow-x: auto; }
+  .linenr { font-size: smaller }
+  .code-highlighted { background-color: #ffff00; }
+  .org-info-js_info-navigation { border-style: none; }
+  #org-info-js_console-label
+    { font-size: 10px; font-weight: bold; white-space: nowrap; }
+  .org-info-js_search-highlight
+    { background-color: #ffff00; color: #000000; font-weight: bold; }
+  /*]]>*/-->
+</style>
+<script type="text/javascript">
+/*
+@licstart  The following is the entire license notice for the
+JavaScript code in this tag.
+
+Copyright (C) 2012-2013 Free Software Foundation, Inc.
+
+The JavaScript code in this tag is free software: you can
+redistribute it and/or modify it under the terms of the GNU
+General Public License (GNU GPL) as published by the Free Software
+Foundation, either version 3 of the License, or (at your option)
+any later version.  The code is distributed WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.  See the GNU GPL for more details.
+
+As additional permission under GNU GPL version 3 section 7, you
+may distribute non-source (e.g., minimized or compacted) forms of
+that code without the copy of the GNU GPL normally required by
+section 4, provided you include this license notice and a URL
+through which recipients can access the Corresponding Source.
+
+
+@licend  The above is the entire license notice
+for the JavaScript code in this tag.
+*/
+<!--/*--><![CDATA[/*><!--*/
+ function CodeHighlightOn(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(null != target) {
+     elem.cacheClassElem = elem.className;
+     elem.cacheClassTarget = target.className;
+     target.className = "code-highlighted";
+     elem.className   = "code-highlighted";
+   }
+ }
+ function CodeHighlightOff(elem, id)
+ {
+   var target = document.getElementById(id);
+   if(elem.cacheClassElem)
+     elem.className = elem.cacheClassElem;
+   if(elem.cacheClassTarget)
+     target.className = elem.cacheClassTarget;
+ }
+/*]]>*///-->
+</script>
+<script type="text/javascript" src="http://orgmode.org/mathjax/MathJax.js"></script>
+<script type="text/javascript">
+<!--/*--><![CDATA[/*><!--*/
+    MathJax.Hub.Config({
+        // Only one of the two following lines, depending on user settings
+        // First allows browser-native MathML display, second forces HTML/CSS
+        //  config: ["MMLorHTML.js"], jax: ["input/TeX"],
+            jax: ["input/TeX", "output/HTML-CSS"],
+        extensions: ["tex2jax.js","TeX/AMSmath.js","TeX/AMSsymbols.js",
+                     "TeX/noUndefined.js"],
+        tex2jax: {
+            inlineMath: [ ["\\(","\\)"] ],
+            displayMath: [ ['$$','$$'], ["\\[","\\]"], ["\\begin{displaymath}","\\end{displaymath}"] ],
+            skipTags: ["script","noscript","style","textarea","pre","code"],
+            ignoreClass: "tex2jax_ignore",
+            processEscapes: false,
+            processEnvironments: true,
+            preview: "TeX"
+        },
+        showProcessingMessages: true,
+        displayAlign: "center",
+        displayIndent: "2em",
+
+        "HTML-CSS": {
+             scale: 100,
+             availableFonts: ["STIX","TeX"],
+             preferredFont: "TeX",
+             webFont: "TeX",
+             imageFont: "TeX",
+             showMathMenu: true,
+        },
+        MMLorHTML: {
+             prefer: {
+                 MSIE:    "MML",
+                 Firefox: "MML",
+                 Opera:   "HTML",
+                 other:   "HTML"
+             }
+        }
+    });
+/*]]>*///-->
+</script>
+</head>
+<body>
+<div id="content">
+<h1 class="title">soccer</h1>
+<div id="table-of-contents">
+<h2>Table of Contents</h2>
+<div id="text-table-of-contents">
+<ul>
+<li><a href="#sec-1">1. MAGIC COMMANDS</a></li>
+<li><a href="#sec-2">2. IMPORT</a></li>
+<li><a href="#sec-3">3. PREPARE DATA</a>
+<ul>
+<li><a href="#sec-3-1">3.1. READ DATA</a></li>
+<li><a href="#sec-3-2">3.2. MUNGING</a>
+<ul>
+<li><a href="#sec-3-2-1">3.2.1. make into a long dataframe</a></li>
+<li><a href="#sec-3-2-2">3.2.2. create look-up table to map team names to a UIN</a></li>
+<li><a href="#sec-3-2-3">3.2.3. create away and home columns</a></li>
+</ul>
+</li>
+<li><a href="#sec-3-3">3.3. Extract data into arrays for pymc</a></li>
+<li><a href="#sec-3-4">3.4. Initial value for strength parameters</a></li>
+</ul>
+</li>
+<li><a href="#sec-4">4. MODEL</a></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-sec-1" class="outline-2">
+<h2 id="sec-1"><span class="section-number-2">1</span> MAGIC COMMANDS</h2>
+<div class="outline-text-2" id="text-1">
+<div class="org-src-container">
+
+<pre class="src src-ipython"># http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/bayes-premier-league/
+%matplotlib inline
+%config InlineBackend.figure_format = 'retina'
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-sec-2" class="outline-2">
+<h2 id="sec-2"><span class="section-number-2">2</span> IMPORT</h2>
+<div class="outline-text-2" id="text-2">
+<div class="org-src-container">
+
+<pre class="src src-ipython">import os
+import math
+import warnings
+warnings.filterwarnings('ignore')
+
+from IPython.display import Image, HTML
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import pymc
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-sec-3" class="outline-2">
+<h2 id="sec-3"><span class="section-number-2">3</span> PREPARE DATA</h2>
+<div class="outline-text-2" id="text-3">
+</div><div id="outline-container-sec-3-1" class="outline-3">
+<h3 id="sec-3-1"><span class="section-number-3">3.1</span> READ DATA</h3>
+<div class="outline-text-3" id="text-3-1">
+<div class="org-src-container">
+
+<pre class="src src-ipython">data_file = 'premier_league.txt'
+df = pd.read_csv(data_file, sep='\t', index_col=0,)
+df.head()
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-sec-3-2" class="outline-3">
+<h3 id="sec-3-2"><span class="section-number-3">3.2</span> MUNGING</h3>
+<div class="outline-text-3" id="text-3-2">
+</div><div id="outline-container-sec-3-2-1" class="outline-4">
+<h4 id="sec-3-2-1"><span class="section-number-4">3.2.1</span> make into a long dataframe</h4>
+<div class="outline-text-4" id="text-3-2-1">
+<div class="org-src-container">
+
+<pre class="src src-ipython">df.index = df.columns
+rows = []
+for i in df.index:
+    for c in df.columns:
+	if i == c: continue
+	score = df.ix[i, c]
+	uscore = score.decode('utf-8') # something strange is happening eith encoding in score. I'll hack for now
+	ascore = uscore.encode('ascii','replace')
+	#score = [int(row) for row in score.split('-')]
+	score = [int(row) for row in ascore.split('?')]
+	rows.append([i, c, score[0], score[1]])
+df = pd.DataFrame(rows, columns = ['home', 'away', 'home_score', 'away_score'])
+df.head()
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-sec-3-2-2" class="outline-4">
+<h4 id="sec-3-2-2"><span class="section-number-4">3.2.2</span> create look-up table to map team names to a UIN</h4>
+<div class="outline-text-4" id="text-3-2-2">
+<div class="org-src-container">
+
+<pre class="src src-ipython">teams = df.home.unique()
+teams = pd.DataFrame(teams, columns=['team'])
+teams['i'] = teams.index
+teams.head()
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-sec-3-2-3" class="outline-4">
+<h4 id="sec-3-2-3"><span class="section-number-4">3.2.3</span> create away and home columns</h4>
+<div class="outline-text-4" id="text-3-2-3">
+<div class="org-src-container">
+
+<pre class="src src-ipython">df = pd.merge(df, teams, left_on='home', right_on='team', how='left')
+df = df.rename(columns = {'i': 'i_home'}).drop('team', 1)
+df = pd.merge(df, teams, left_on='away', right_on='team', how='left')
+df = df.rename(columns = {'i': 'i_away'}).drop('team', 1)
+df.head()
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-sec-3-3" class="outline-3">
+<h3 id="sec-3-3"><span class="section-number-3">3.3</span> Extract data into arrays for pymc</h3>
+<div class="outline-text-3" id="text-3-3">
+<div class="org-src-container">
+
+<pre class="src src-ipython">observed_home_goals = df.home_score.values
+observed_away_goals = df.away_score.values
+home_team = df.i_home.values
+away_team = df.i_away.values
+num_teams = len(df.i_home.unique())
+num_games = len(home_team)
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-sec-3-4" class="outline-3">
+<h3 id="sec-3-4"><span class="section-number-3">3.4</span> Initial value for strength parameters</h3>
+<div class="outline-text-3" id="text-3-4">
+<div class="org-src-container">
+
+<pre class="src src-ipython">g = df.groupby('i_away')
+att_starting_points = np.log(g.away_score.mean()) # log of mean scores when away
+g = df.groupby('i_home')
+def_starting_points = -np.log(g.away_score.mean())
+</pre>
+</div>
+</div>
+</div>
+</div>
+
+<div id="outline-container-sec-4" class="outline-2">
+<h2 id="sec-4"><span class="section-number-2">4</span> MODEL</h2>
+<div class="outline-text-2" id="text-4">
+<p>
+We start assuming that we only care about total passing yards by each team.
+Further, we will ignore, for the moment, that the players on a team may change
+from one game to the next. Table below is a list of basic
+assumptions made in the current model.
+</p>
+
+<table border="2" cellspacing="0" cellpadding="6" rules="groups" frame="hsides">
+
+
+<colgroup>
+<col  class="left" />
+
+<col  class="left" />
+</colgroup>
+<tbody>
+<tr>
+<td class="left">Observable</td>
+<td class="left">\(y_{gi}\)</td>
+</tr>
+
+<tr>
+<td class="left">Unovservable</td>
+<td class="left">\(\theta_{gi}\)</td>
+</tr>
+
+<tr>
+<td class="left">Unit of performance</td>
+<td class="left">Expected Performance</td>
+</tr>
+
+<tr>
+<td class="left">Distribution of &theta;<sub>gi</sub>}</td>
+<td class="left">~Poisson</td>
+</tr>
+
+<tr>
+<td class="left">Distribution of $y<sub>gi</sub> &vert; &theta;<sub>gi</sub> $</td>
+<td class="left">~Poisson</td>
+</tr>
+</tbody>
+</table>
+
+<p>
+Assume a log-linear random effect model
+</p>
+
+\begin{equation}
+\label{eq:4}
+\begin{aligned}
+& \log{\theta_{g1}} = home + att_{h(g)} + def_{a(g)}  \\
+& \log{\theta_{g2}} = att_{a(g)} + def_{h(g)}
+\end{aligned}
+\end{equation}
+
+<p>
+Where \(home\) is the home advantage parameter. The scoring intensity, \(\theta\)
+is determined by the attack (offense) and defensive strengths of the teams.
+The subscripts \(h\) and \(a\) are for home and away, respectively. The model data
+structure consists of the game week and id, home and away teams, and total
+passing yards. An example table is presented in Table \ref{table:data-tab}.
+</p>
+
+<p>
+Note that a negative defense parameter will weaken opposing teams attacking
+parameter. We Assume
+</p>
+
+\begin{equation}
+\begin{aligned}
+home & \sim Normal(0,0.0001)\\
+intercept & \sim Normal(0,0.001)
+\end{aligned}
+\end{equation}
+
+<div class="org-src-container">
+
+<pre class="src src-ipython">home = pymc.Normal('home', 0, .0001, value=0)
+intercept = pymc.Normal('intercept', 0, .0001, value=0)
+</pre>
+</div>
+
+<p>
+Hyper-prior (priors on hierarchical model parameter )
+</p>
+
+\begin{equation}
+\begin{aligned}
+\mu_{att} & \sim Normal(0, .0001)\\
+\mu_{def} & \sim Normal(0, .0001)\\
+\tau_{att} & \sim Normal(0.1, 0.1)\\
+\tau_{def} & \sim Normal(0.1, 0.1)
+\end{aligned}
+\end{equation}
+
+<div class="org-src-container">
+
+<pre class="src src-ipython">tau_att = pymc.Gamma('tau_att', .1, .1, value=10)
+tau_def = pymc.Gamma('tau_def', .1, .1, value=10)
+</pre>
+</div>
+
+<div class="org-src-container">
+
+<pre class="src src-ipython">#team-specific parameters
+atts_star = pymc.Normal("atts_star",
+			mu=0,
+			tau=tau_att,
+			size=num_teams,
+			value=att_starting_points.values)
+defs_star = pymc.Normal("defs_star",
+			mu=0,
+			tau=tau_def,
+			size=num_teams,
+			value=def_starting_points.values)
+
+# trick to code the sum to zero contraint
+@pymc.deterministic
+def atts(atts_star=atts_star):
+    atts = atts_star.copy()
+    atts = atts - np.mean(atts_star)
+    return atts
+
+@pymc.deterministic
+def defs(defs_star=defs_star):
+    defs = defs_star.copy()
+    defs = defs - np.mean(defs_star)
+    return defs
+
+@pymc.deterministic
+def home_theta(home_team=home_team,
+	       away_team=away_team,
+	       home=home,
+	       atts=atts,
+	       defs=defs,
+	       intercept=intercept):
+    return np.exp(intercept +
+		  home +
+		  atts[home_team] +
+		  defs[away_team])
+
+@pymc.deterministic
+def away_theta(home_team=home_team,
+	       away_team=away_team,
+	       home=home,
+	       atts=atts,
+	       defs=defs,
+	       intercept=intercept):
+    return np.exp(intercept +
+		  atts[away_team] +
+		  defs[home_team])
+
+
+home_goals = pymc.Poisson('home_goals',
+			  mu=home_theta,
+			  value=observed_home_goals,
+			  observed=True)
+away_goals = pymc.Poisson('away_goals',
+			  mu=away_theta,
+			  value=observed_away_goals,
+			  observed=True)
+
+mcmc = pymc.MCMC([home, intercept, tau_att, tau_def,
+		  home_theta, away_theta,
+		  atts_star, defs_star, atts, defs,
+		  home_goals, away_goals])
+</pre>
+</div>
+
+<div class="org-src-container">
+
+<pre class="src src-ipython">map_ = pymc.MAP( mcmc )
+map_.fit()
+# mcmc.sample(20000, 4000, 2)
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="postamble" class="status">
+<p class="author">Author: Edgar Galvan</p>
+<p class="date">Created: 2016-12-06 Tue 23:55</p>
+<p class="creator"><a href="http://www.gnu.org/software/emacs/">Emacs</a> 25.1.1 (<a href="http://orgmode.org">Org</a> mode 8.2.10)</p>
+<p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
+</div>
+</body>
+</html>
