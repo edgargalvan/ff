@@ -1,0 +1,7 @@
+\nomenclatureentry{a$T$@[{$T$}]\begingroup Number of teams\nomeqref {0}|nompageref}{1}
+\nomenclatureentry{a$G$@[{$G$}]\begingroup Total number of games played\nomeqref {0}|nompageref}{1}
+\nomenclatureentry{a$t$@[{$t$}]\begingroup Team index\nomeqref {0}|nompageref}{1}
+\nomenclatureentry{a$g$@[{$g$}]\begingroup Game index\nomeqref {0}|nompageref}{1}
+\nomenclatureentry{a$i$@[{$i$}]\begingroup Index corresponding to home and away team, 1 and 2, respectively\nomeqref {0}|nompageref}{1}
+\nomenclatureentry{a$y_{gi}$@[{$y_{gi}$}]\begingroup Passing yards of quarterback for game $g$\nomeqref {0}|nompageref}{1}
+\nomenclatureentry{a$\theta_{gi}$@[{$\theta_{gi}$}]\begingroup Passing intensity\nomeqref {0}|nompageref}{1}

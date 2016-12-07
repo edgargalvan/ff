@@ -1,6 +1,10 @@
+* Sources
+http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/bayes-premier-league/
+http://stats.stackexchange.com/questions/120162/how-to-specify-a-hierarchical-bayesian-model-with-sum-to-zero-constraints
+
+
 * MAGIC COMMANDS
 #+BEGIN_SRC ipython :session
-# http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/bayes-premier-league/
 %matplotlib inline
 %config InlineBackend.figure_format = 'retina'
 #+END_SRC
@@ -173,6 +177,9 @@ home = pymc.Normal('home', 0, .0001, value=0)
 intercept = pymc.Normal('intercept', 0, .0001, value=0)
 #+END_SRC
 
+#+RESULTS:
+
+Where $intercept$ is the average goals scored per game by the away team.
 Hyper-prior (priors on hierarchical model parameter )
 
   \begin{equation}
@@ -189,6 +196,17 @@ tau_att = pymc.Gamma('tau_att', .1, .1, value=10)
 tau_def = pymc.Gamma('tau_def', .1, .1, value=10)
 #+END_SRC
 
+#+RESULTS:
+
+To ensure identifiability, a sum-to-zero constraint on attack and defense
+parameters is assumed
+  \begin{equation}
+  \begin{aligned}
+  \sum_{t=1}^{T}att_t & = 0 \\
+  \sum_{t=1}^{T}def_t & = 0 \\
+  \end{aligned}
+  \end{equation}
+
 #+BEGIN_SRC ipython :session
 #team-specific parameters
 atts_star = pymc.Normal("atts_star",
@@ -201,6 +219,14 @@ defs_star = pymc.Normal("defs_star",
                         tau=tau_def,
                         size=num_teams,
                         value=def_starting_points.values)
+
+#+END_SRC
+
+#+RESULTS:
+
+
+
+#+BEGIN_SRC ipython :session
 
 # trick to code the sum to zero contraint
 @pymc.deterministic
