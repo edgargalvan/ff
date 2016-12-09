@@ -1,7 +1,9 @@
 * Sources
-http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/bayes-premier-league/
-http://stats.stackexchange.com/questions/120162/how-to-specify-a-hierarchical-bayesian-model-with-sum-to-zero-constraints
-
+hierarchical models with pymc http://twiecki.github.io/blog/2014/03/17/bayesian-glms-3/
+book I should probably buy https://www.amazon.com/Doing-Bayesian-Data-Analysis-Tutorial-ebook/dp/B00PYZ2VR6/ref=mt_kindle?_encoding=UTF8&me=
+bayes sports http://tolstoy.newcastle.edu.au/R/e8/help/att-6544/karlisntzuofras03.pdf
+most of this code http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/bayes-premier-league/
+bayes soccer http://stats.stackexchange.com/questions/120162/how-to-specify-a-hierarchical-bayesian-model-with-sum-to-zero-constraints
 
 * MAGIC COMMANDS
 #+BEGIN_SRC ipython :session
@@ -135,35 +137,45 @@ def_starting_points = -np.log(g.away_score.mean())
 #+RESULTS:
 
 * MODEL
-  We start assuming that we only care about total passing yards by each team.
-  Further, we will ignore, for the moment, that the players on a team may change
-  from one game to the next. Table below is a list of basic
-  assumptions made in the current model.
+ Table below is a list of basic assumptions made in the current model.
 
-| Observable                                  | $y_{gi}$             |
-| Unovservable                                | $\theta_{gi}$        |
-| Unit of performance                         | Expected Performance |
-| Distribution of \theta_{gi}}                | ~Poisson             |
-| Distribution of $y_{gi} \vert \theta_{gi} $ | ~Poisson             |
+| Parameter                                   | Property            |
+|---------------------------------------------+---------------------|
+| Point scored $y_{gi}$                       | Observable          |
+| Scoring intensity $\theta_{gi}$             | Unobservable        |
+| Attacking and defensive strengths           | Unovservable        |
+| Expected Performance                        | Unit of performance |
+| Distribution of \theta_{gi}                 | ~Poisson            |
+| Distribution of $y_{gi} \vert \theta_{gi} $ | ~Poisson            |
 
-  Assume a log-linear random effect model
+The observed counts (score) $y = (y_{g1},y_{g2})$ is modeled as independent
+Poison
 
   \begin{equation}
-  \label{eq:4}
+  y_{gj} \vert \theta_{gj} & = Poisson(\theta_{gj})\\
+  \end{equation}
+
+where the indices correspond to the $g$-th game and the home ($j=1$) and away
+($j=2$) teams, respectively. Assume a log-linear random effect model (a common model but this should really
+  be validated in some way).
+
+  \begin{equation}
   \begin{aligned}
-  & \log{\theta_{g1}} = home + att_{h(g)} + def_{a(g)}  \\
-  & \log{\theta_{g2}} = att_{a(g)} + def_{h(g)}
+  & \log{\theta_{g1}} = intercept + home + att_{h(g)} + def_{a(g)}  \\
+  & \log{\theta_{g2}} = intercept + att_{a(g)} + def_{h(g)}
   \end{aligned}
   \end{equation}
 
-  Where $home$ is the home advantage parameter. The scoring intensity, $\theta$
-  is determined by the attack (offense) and defensive strengths of the teams.
-  The subscripts $h$ and $a$ are for home and away, respectively. The model data
-  structure consists of the game week and id, home and away teams, and total
-  passing yards. An example table is presented in Table \ref{table:data-tab}.
-
-  Note that a negative defense parameter will weaken opposing teams attacking
-  parameter. We Assume
+  Where $intercept$ is the standard intercept parameter, which in this context
+  represents the average goals scored per game by the away team; $home$ is the
+  home advantage parameter. The home advantage is assumed to be consistent for
+  all teams and throughout the season. The scoring intensity, $\theta$ is
+  determined by the attack (offense) and defensive strengths of the teams. Note
+  that a negative defense parameter will weaken opposing teams attacking
+  parameter. The subscripts $h$ and $a$ are for home and away, respectively
+  [TODO:aren't these indices inconsistent]. The model data structure consists of
+  the game week and id, home and away teams, and total points scored. We Assume
+  the flat priors
 
   \begin{equation}
   \begin{aligned}
@@ -179,13 +191,10 @@ intercept = pymc.Normal('intercept', 0, .0001, value=0)
 
 #+RESULTS:
 
-Where $intercept$ is the average goals scored per game by the away team.
-Hyper-prior (priors on hierarchical model parameter )
+The hyper-prior (priors on hierarchical model parameter ) are assumed
 
   \begin{equation}
   \begin{aligned}
-  \mu_{att} & \sim Normal(0, .0001)\\
-  \mu_{def} & \sim Normal(0, .0001)\\
   \tau_{att} & \sim Normal(0.1, 0.1)\\
   \tau_{def} & \sim Normal(0.1, 0.1)
   \end{aligned}
@@ -198,8 +207,11 @@ tau_def = pymc.Gamma('tau_def', .1, .1, value=10)
 
 #+RESULTS:
 
-To ensure identifiability, a sum-to-zero constraint on attack and defense
-parameters is assumed
+Note the Biangiardo paper has more model parameters but they seem to
+over-constrain the problem. To ensure identifiability (that no two
+parameterizations are observationally equivalent), a sum-to-zero constraint
+(could have use anything here) on attack and defense parameters is assumed
+
   \begin{equation}
   \begin{aligned}
   \sum_{t=1}^{T}att_t & = 0 \\
@@ -220,14 +232,6 @@ defs_star = pymc.Normal("defs_star",
                         size=num_teams,
                         value=def_starting_points.values)
 
-#+END_SRC
-
-#+RESULTS:
-
-
-
-#+BEGIN_SRC ipython :session
-
 # trick to code the sum to zero contraint
 @pymc.deterministic
 def atts(atts_star=atts_star):
@@ -240,7 +244,13 @@ def defs(defs_star=defs_star):
     defs = defs_star.copy()
     defs = defs - np.mean(defs_star)
     return defs
+#+END_SRC
 
+#+RESULTS:
+
+Now, we define our remaining parameters
+
+#+BEGIN_SRC ipython :session
 @pymc.deterministic
 def home_theta(home_team=home_team,
                away_team=away_team,
@@ -264,11 +274,11 @@ def away_theta(home_team=home_team,
                   atts[away_team] +
                   defs[home_team])
 
-
 home_goals = pymc.Poisson('home_goals',
                           mu=home_theta,
                           value=observed_home_goals,
                           observed=True)
+
 away_goals = pymc.Poisson('away_goals',
                           mu=away_theta,
                           value=observed_away_goals,
@@ -286,6 +296,17 @@ mcmc = pymc.MCMC([home, intercept, tau_att, tau_def,
 map_ = pymc.MAP( mcmc )
 map_.fit()
 # mcmc.sample(20000, 4000, 2)
+mcmc.sample(1000)
 #+END_SRC
 
 #+RESULTS:
+
+* VISUALIZATION
+** highest posterior density intervals for attack parameter
+#+BEGIN_SRC ipython :session
+
+df_hpd = pd.DataFrame(atts.stats()['95% HPD interval'],
+                      columns=['hpd_low', 'hpd_high'],
+                      index=teams.team.values)
+
+#+END_SRC
