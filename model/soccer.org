@@ -8,26 +8,33 @@ bayes soccer http://stats.stackexchange.com/questions/120162/how-to-specify-a-hi
 * MAGIC COMMANDS
 #+BEGIN_SRC ipython :session
 %matplotlib inline
-%config InlineBackend.figure_format = 'retina'
+%config InlineBackend.figure_format = 'png'
+
+# check python version, should be python3
+import sys
+sys.version
 #+END_SRC
 
 #+RESULTS:
+: 3\.6\.0
+
+
 * IMPORT
-#+BEGIN_SRC ipython :session
+#+BEGIN_SRC ipython :session :results none
 import os
 import math
 import warnings
 warnings.filterwarnings('ignore')
 
 from IPython.display import Image, HTML
+from IPython.core.pylabtools import figsize
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
-import pymc
+import pymc3 as pm
+import theano.tensor as tt
 #+END_SRC
 
-#+RESULTS:
 * PREPARE DATA
 ** READ DATA
 #+BEGIN_SRC ipython :session
@@ -55,6 +62,7 @@ Chelsea         0–0  3–1  3–0  1–2  1–0  4–0  2–2  0–0
 Crystal Palace  1–1  0–1  1–0  3–1  0–2  0–1  3–1  1–0
 #+end_example
 
+
 ** MUNGING
 *** make into a long dataframe
 #+BEGIN_SRC ipython :session
@@ -64,10 +72,7 @@ for i in df.index:
     for c in df.columns:
         if i == c: continue
         score = df.ix[i, c]
-        uscore = score.decode('utf-8') # something strange is happening eith encoding in score. I'll hack for now
-        ascore = uscore.encode('ascii','replace')
-        #score = [int(row) for row in score.split('-')]
-        score = [int(row) for row in ascore.split('?')]
+        score = [int(row) for row in score.split('–')]
         rows.append([i, c, score[0], score[1]])
 df = pd.DataFrame(rows, columns = ['home', 'away', 'home_score', 'away_score'])
 df.head()
@@ -115,7 +120,7 @@ df.head()
 : 4  ARS  EVE           1           1       0       5
 
 ** Extract data into arrays for pymc
-#+BEGIN_SRC ipython :session
+#+BEGIN_SRC ipython :session :results none
 observed_home_goals = df.home_score.values
 observed_away_goals = df.away_score.values
 home_team = df.i_home.values
@@ -124,17 +129,13 @@ num_teams = len(df.i_home.unique())
 num_games = len(home_team)
 #+END_SRC
 
-#+RESULTS:
-
 ** Initial value for strength parameters
-#+BEGIN_SRC ipython :session
+#+BEGIN_SRC ipython :session :results none
 g = df.groupby('i_away')
 att_starting_points = np.log(g.away_score.mean()) # log of mean scores when away
 g = df.groupby('i_home')
 def_starting_points = -np.log(g.away_score.mean())
 #+END_SRC
-
-#+RESULTS:
 
 * MODEL
  Table below is a list of basic assumptions made in the current model.
@@ -184,12 +185,11 @@ where the indices correspond to the $g$-th game and the home ($j=1$) and away
   \end{aligned}
   \end{equation}
 
-#+BEGIN_SRC ipython :session
-home = pymc.Normal('home', 0, .0001, value=0)
-intercept = pymc.Normal('intercept', 0, .0001, value=0)
+#+BEGIN_SRC ipython :session :results none
+with pm.Model() as model:
+    home = pm.Normal('home', 0, .0001, testval=0)
+    intercept = pm.Normal('intercept', 0, .0001, testval=0)
 #+END_SRC
-
-#+RESULTS:
 
 The hyper-prior (priors on hierarchical model parameter ) are assumed
 
@@ -200,12 +200,11 @@ The hyper-prior (priors on hierarchical model parameter ) are assumed
   \end{aligned}
   \end{equation}
 
-#+BEGIN_SRC ipython :session :file  :exports both
-tau_att = pymc.Gamma('tau_att', .1, .1, value=10)
-tau_def = pymc.Gamma('tau_def', .1, .1, value=10)
+#+BEGIN_SRC ipython :session :results none
+with model:
+    tau_att = pm.Gamma('tau_att', .1, .1, testval=10)
+    tau_def = pm.Gamma('tau_def', .1, .1, testval=10)
 #+END_SRC
-
-#+RESULTS:
 
 Note the Biangiardo paper has more model parameters but they seem to
 over-constrain the problem. To ensure identifiability (that no two
@@ -219,90 +218,77 @@ parameterizations are observationally equivalent), a sum-to-zero constraint
   \end{aligned}
   \end{equation}
 
-#+BEGIN_SRC ipython :session
+
+#+BEGIN_SRC ipython :session :results none
 #team-specific parameters
-atts_star = pymc.Normal("atts_star",
-                        mu=0,
-                        tau=tau_att,
-                        size=num_teams,
-                        value=att_starting_points.values)
-defs_star = pymc.Normal("defs_star",
-                        mu=0,
-                        tau=tau_def,
-                        size=num_teams,
-                        value=def_starting_points.values)
+with model:
+    atts_star = pm.Normal("atts_star",
+                            mu=0,
+                            tau=tau_att,
+                            shape=num_teams,
+                            testval=att_starting_points.values)
 
-# trick to code the sum to zero contraint
-@pymc.deterministic
-def atts(atts_star=atts_star):
-    atts = atts_star.copy()
-    atts = atts - np.mean(atts_star)
-    return atts
-
-@pymc.deterministic
-def defs(defs_star=defs_star):
-    defs = defs_star.copy()
-    defs = defs - np.mean(defs_star)
-    return defs
+    defs_star = pm.Normal("defs_star",
+                            mu=0,
+                            tau=tau_def,
+                            shape=num_teams,
+                            testval=def_starting_points.values)
 #+END_SRC
 
-#+RESULTS:
+Trick to code the sum to zero constraint
+#+BEGIN_SRC ipython :session :results none
+with model:
+        atts = pm.Deterministic("atts",atts_star.copy() - tt.mean(atts_star))
+        defs = pm.Deterministic("defs",defs_star.copy() - tt.mean(defs_star))
+#+END_SRC
 
 Now, we define our remaining parameters
+#+BEGIN_SRC ipython :session :results none
+with model:
+    home_theta = pm.Deterministic('home_theta',intercept + home + atts[home_team] + defs[away_team])
+    away_theta = pm.Deterministic('away_theta',intercept + atts[away_team] + defs[home_team])
 
-#+BEGIN_SRC ipython :session
-@pymc.deterministic
-def home_theta(home_team=home_team,
-               away_team=away_team,
-               home=home,
-               atts=atts,
-               defs=defs,
-               intercept=intercept):
-    return np.exp(intercept +
-                  home +
-                  atts[home_team] +
-                  defs[away_team])
+    home_goals = pm.Poisson('home_goals',
+                              mu=home_theta,
+                              testval=observed_home_goals,
+                              observed=True)
 
-@pymc.deterministic
-def away_theta(home_team=home_team,
-               away_team=away_team,
-               home=home,
-               atts=atts,
-               defs=defs,
-               intercept=intercept):
-    return np.exp(intercept +
-                  atts[away_team] +
-                  defs[home_team])
+    away_goals = pm.Poisson('away_goals',
+                              mu=away_theta,
+                              testval=observed_away_goals,
+                              observed=True)
 
-home_goals = pymc.Poisson('home_goals',
-                          mu=home_theta,
-                          value=observed_home_goals,
-                          observed=True)
-
-away_goals = pymc.Poisson('away_goals',
-                          mu=away_theta,
-                          value=observed_away_goals,
-                          observed=True)
-
-mcmc = pymc.MCMC([home, intercept, tau_att, tau_def,
-                  home_theta, away_theta,
-                  atts_star, defs_star, atts, defs,
-                  home_goals, away_goals])
 #+END_SRC
 
-#+RESULTS:
-
-#+BEGIN_SRC ipython :session
-map_ = pymc.MAP( mcmc )
-map_.fit()
+#+BEGIN_SRC ipython :session :results none
+# TODO: Add MAP and increase samples according to this pymc2 code
+# map_ = pm.MAP( mcmc )
+# map_.fit()
 # mcmc.sample(20000, 4000, 2)
-mcmc.sample(1000)
+with model:
+    step = pm.Metropolis()
+    trace = pm.sample(20000,step=step)
+    burned_trace = trace[1000:]
 #+END_SRC
-
-#+RESULTS:
 
 * VISUALIZATION
-** highest posterior density intervals for attack parameter
+** View convergence
+#+BEGIN_SRC ipython :session :file /tmp/image.png :exports both
+from IPython.core.pylabtools import figsize
+figsize(.1, .1)
+
+# Pm.Matplot.plot(home)
+pm.plots.traceplot(trace=trace, varnames=["home"])
+#+END_SRC
+
+#+RESULTS:
+[[file:/tmp/image.png]]
+#+BEGIN_SRC ipython :session :file /tmp/image2.png :exports both
+p_trace = trace["tau_def"]
+plt.plot(p_trace, label="$p$: frequency of assignment to cluster 0",
+     color=colors[0])
+#+END_SRC
+
 #+BEGIN_SRC ipython :session
 
 df_hpd = pd.DataFrame(atts.stats()['95% HPD interval'],
