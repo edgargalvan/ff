@@ -1,12 +1,14 @@
 * Sources
+#+SETUPFILE: ~/bin/git/org-minimal-html-theme/setup/theme-minimal.setup
 hierarchical models with pymc http://twiecki.github.io/blog/2014/03/17/bayesian-glms-3/
 book I should probably buy https://www.amazon.com/Doing-Bayesian-Data-Analysis-Tutorial-ebook/dp/B00PYZ2VR6/ref=mt_kindle?_encoding=UTF8&me=
 bayes sports http://tolstoy.newcastle.edu.au/R/e8/help/att-6544/karlisntzuofras03.pdf
 most of this code http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/bayes-premier-league/
 bayes soccer http://stats.stackexchange.com/questions/120162/how-to-specify-a-hierarchical-bayesian-model-with-sum-to-zero-constraints
 
-* MAGIC COMMANDS
-#+BEGIN_SRC ipython :session
+* Setup
+** Magic Commands
+#+BEGIN_SRC ipython :session :exports both
 %matplotlib inline
 %config InlineBackend.figure_format = 'png'
 
@@ -16,11 +18,10 @@ sys.version
 #+END_SRC
 
 #+RESULTS:
-: 3\.6\.0
+: 3\.5\.2
 
-
-* IMPORT
-#+BEGIN_SRC ipython :session :results none
+** Import
+#+BEGIN_SRC ipython :session :exports both :results none
 import os
 import math
 import warnings
@@ -35,9 +36,9 @@ import pymc3 as pm
 import theano.tensor as tt
 #+END_SRC
 
-* PREPARE DATA
-** READ DATA
-#+BEGIN_SRC ipython :session
+* Prepare Data
+** Read Data
+#+BEGIN_SRC ipython :session :exports both
 data_file = 'premier_league.txt'
 df = pd.read_csv(data_file, sep='\t', index_col=0,)
 df.head()
@@ -62,10 +63,9 @@ Chelsea         0–0  3–1  3–0  1–2  1–0  4–0  2–2  0–0
 Crystal Palace  1–1  0–1  1–0  3–1  0–2  0–1  3–1  1–0
 #+end_example
 
-
-** MUNGING
+** Munging
 *** make into a long dataframe
-#+BEGIN_SRC ipython :session
+#+BEGIN_SRC ipython :session :exports both
 df.index = df.columns
 rows = []
 for i in df.index:
@@ -87,7 +87,7 @@ df.head()
 : 4  ARS  EVE           1           1
 
 *** create look-up table to map team names to a UIN
-#+BEGIN_SRC ipython :session
+#+BEGIN_SRC ipython :session :exports both
 teams = df.home.unique()
 teams = pd.DataFrame(teams, columns=['team'])
 teams['i'] = teams.index
@@ -103,7 +103,7 @@ teams.head()
 : 4  CRY  4
 
 *** create away and home columns
-#+BEGIN_SRC ipython :session
+#+BEGIN_SRC ipython :session :exports both
 df = pd.merge(df, teams, left_on='home', right_on='team', how='left')
 df = df.rename(columns = {'i': 'i_home'}).drop('team', 1)
 df = pd.merge(df, teams, left_on='away', right_on='team', how='left')
@@ -120,7 +120,7 @@ df.head()
 : 4  ARS  EVE           1           1       0       5
 
 ** Extract data into arrays for pymc
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 observed_home_goals = df.home_score.values
 observed_away_goals = df.away_score.values
 home_team = df.i_home.values
@@ -130,7 +130,7 @@ num_games = len(home_team)
 #+END_SRC
 
 ** Initial value for strength parameters
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 g = df.groupby('i_away')
 att_starting_points = np.log(g.away_score.mean()) # log of mean scores when away
 g = df.groupby('i_home')
@@ -146,46 +146,46 @@ def_starting_points = -np.log(g.away_score.mean())
 | Scoring intensity $\theta_{gi}$             | Unobservable        |
 | Attacking and defensive strengths           | Unovservable        |
 | Expected Performance                        | Unit of performance |
-| Distribution of \theta_{gi}                 | ~Poisson            |
+| Distribution of $\theta_{gi}$               | ~Poisson            |
 | Distribution of $y_{gi} \vert \theta_{gi} $ | ~Poisson            |
 
 The observed counts (score) $y = (y_{g1},y_{g2})$ is modeled as independent
 Poison
 
-  \begin{equation}
-  y_{gj} \vert \theta_{gj} & = Poisson(\theta_{gj})\\
-  \end{equation}
+\begin{equation}
+y_{gj} \vert \theta_{gj} = Poisson(\theta_{gj})
+\end{equation}
 
 where the indices correspond to the $g$-th game and the home ($j=1$) and away
-($j=2$) teams, respectively. Assume a log-linear random effect model (a common model but this should really
-  be validated in some way).
+($j=2$) teams, respectively. Assume a log-linear random effect model (a common
+model but this should really be validated in some way).
 
-  \begin{equation}
-  \begin{aligned}
-  & \log{\theta_{g1}} = intercept + home + att_{h(g)} + def_{a(g)}  \\
-  & \log{\theta_{g2}} = intercept + att_{a(g)} + def_{h(g)}
-  \end{aligned}
-  \end{equation}
+\begin{equation}
+\begin{aligned}
+& \log{\theta_{g1}} = intercept + home + att_{h(g)} + def_{a(g)}  \\
+& \log{\theta_{g2}} = intercept + att_{a(g)} + def_{h(g)}
+\end{aligned}
+\end{equation}
 
-  Where $intercept$ is the standard intercept parameter, which in this context
-  represents the average goals scored per game by the away team; $home$ is the
-  home advantage parameter. The home advantage is assumed to be consistent for
-  all teams and throughout the season. The scoring intensity, $\theta$ is
-  determined by the attack (offense) and defensive strengths of the teams. Note
-  that a negative defense parameter will weaken opposing teams attacking
-  parameter. The subscripts $h$ and $a$ are for home and away, respectively
-  [TODO:aren't these indices inconsistent]. The model data structure consists of
-  the game week and id, home and away teams, and total points scored. We Assume
-  the flat priors
+Where $intercept$ is the standard intercept parameter, which in this context
+represents the average goals scored per game by the away team; $home$ is the
+home advantage parameter. The home advantage is assumed to be consistent for
+all teams and throughout the season. The scoring intensity, $\theta$ is
+determined by the attack (offense) and defensive strengths of the teams. Note
+that a negative defense parameter will weaken opposing teams attacking
+parameter. The subscripts $h$ and $a$ are for home and away, respectively
+[TODO:aren't these indices inconsistent]. The model data structure consists of
+the game week and id, home and away teams, and total points scored. We Assume
+the flat priors
 
-  \begin{equation}
-  \begin{aligned}
-  home & \sim Normal(0,0.0001)\\
-  intercept & \sim Normal(0,0.001)
-  \end{aligned}
-  \end{equation}
+\begin{equation}
+\begin{aligned}
+home & \sim Normal(0,0.0001)\\
+intercept & \sim Normal(0,0.001)
+\end{aligned}
+\end{equation}
 
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 with pm.Model() as model:
     home = pm.Normal('home', 0, .0001, testval=0)
     intercept = pm.Normal('intercept', 0, .0001, testval=0)
@@ -200,26 +200,21 @@ The hyper-prior (priors on hierarchical model parameter ) are assumed
   \end{aligned}
   \end{equation}
 
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 with model:
     tau_att = pm.Gamma('tau_att', .1, .1, testval=10)
     tau_def = pm.Gamma('tau_def', .1, .1, testval=10)
 #+END_SRC
 
-Note the Biangiardo paper has more model parameters but they seem to
-over-constrain the problem. To ensure identifiability (that no two
-parameterizations are observationally equivalent), a sum-to-zero constraint
-(could have use anything here) on attack and defense parameters is assumed
-
+The team strengths are modeled ad
   \begin{equation}
   \begin{aligned}
-  \sum_{t=1}^{T}att_t & = 0 \\
-  \sum_{t=1}^{T}def_t & = 0 \\
+  att_{t} & \sim Normal(0, \tau_{att})\\
+  def_{t} & \sim Normal(0, \tau_{def})
   \end{aligned}
   \end{equation}
 
-
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 #team-specific parameters
 with model:
     atts_star = pm.Normal("atts_star",
@@ -235,15 +230,28 @@ with model:
                             testval=def_starting_points.values)
 #+END_SRC
 
+The Biangiardo paper has more model parameters but they seem to
+over-constrain the problem. To ensure identifiability (that no two
+parameterizations are observationally equivalent), a sum-to-zero constraint
+(could have use anything here) on attack and defense parameters is assumed
+
+  \begin{equation}
+  \begin{aligned}
+  \sum_{t=1}^{T}att_t & = 0 \\
+  \sum_{t=1}^{T}def_t & = 0 \\
+  \end{aligned}
+  \end{equation}
+
+
 Trick to code the sum to zero constraint
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 with model:
         atts = pm.Deterministic("atts",atts_star.copy() - tt.mean(atts_star))
         defs = pm.Deterministic("defs",defs_star.copy() - tt.mean(defs_star))
 #+END_SRC
 
 Now, we define our remaining parameters
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 with model:
     home_theta = pm.Deterministic('home_theta',intercept + home + atts[home_team] + defs[away_team])
     away_theta = pm.Deterministic('away_theta',intercept + atts[away_team] + defs[home_team])
@@ -260,7 +268,7 @@ with model:
 
 #+END_SRC
 
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session :exports both :results none
 # TODO: Add MAP and increase samples according to this pymc2 code
 # map_ = pm.MAP( mcmc )
 # map_.fit()
@@ -275,24 +283,13 @@ with model:
 ** View convergence
 #+BEGIN_SRC ipython :session :file /tmp/image.png :exports both
 from IPython.core.pylabtools import figsize
-figsize(.1, .1)
+figsize(10, 4)
 
 # Pm.Matplot.plot(home)
-pm.plots.traceplot(trace=trace, varnames=["home"])
+# pm.plots.traceplot(trace=trace, varnames=["home"])
+plt.hist(trace['home'], histtype='stepfilled', bins=25, alpha=0.85)
+
 #+END_SRC
 
 #+RESULTS:
 [[file:/tmp/image.png]]
-#+BEGIN_SRC ipython :session :file /tmp/image2.png :exports both
-p_trace = trace["tau_def"]
-plt.plot(p_trace, label="$p$: frequency of assignment to cluster 0",
-     color=colors[0])
-#+END_SRC
-
-#+BEGIN_SRC ipython :session
-
-df_hpd = pd.DataFrame(atts.stats()['95% HPD interval'],
-                      columns=['hpd_low', 'hpd_high'],
-                      index=teams.team.values)
-
-#+END_SRC
