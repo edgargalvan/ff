@@ -137,7 +137,7 @@ g = df.groupby('i_home')
 def_starting_points = -np.log(g.away_score.mean())
 #+END_SRC
 
-* MODEL
+* Model
  Table below is a list of basic assumptions made in the current model.
 
 | Parameter                                   | Property            |
@@ -187,8 +187,8 @@ intercept & \sim Normal(0,0.001)
 
 #+BEGIN_SRC ipython :session :exports both :results none
 with pm.Model() as model:
-    home = pm.Normal('home', 0, .0001, testval=0)
-    intercept = pm.Normal('intercept', 0, .0001, testval=0)
+    home = pm.Normal('home', mu=0, tau=.0001, testval=0)
+    intercept = pm.Normal('intercept', mu=0, tau=.0001, testval=0)
 #+END_SRC
 
 The hyper-prior (priors on hierarchical model parameter ) are assumed
@@ -202,8 +202,8 @@ The hyper-prior (priors on hierarchical model parameter ) are assumed
 
 #+BEGIN_SRC ipython :session :exports both :results none
 with model:
-    tau_att = pm.Gamma('tau_att', .1, .1, testval=10)
-    tau_def = pm.Gamma('tau_def', .1, .1, testval=10)
+    tau_att = pm.Gamma('tau_att', alpha=.1, beta=.1, testval=10)
+    tau_def = pm.Gamma('tau_def', alpha=.1, beta=.1, testval=10)
 #+END_SRC
 
 The team strengths are modeled ad
@@ -246,15 +246,15 @@ parameterizations are observationally equivalent), a sum-to-zero constraint
 Trick to code the sum to zero constraint
 #+BEGIN_SRC ipython :session :exports both :results none
 with model:
-        atts = pm.Deterministic("atts",atts_star.copy() - tt.mean(atts_star))
-        defs = pm.Deterministic("defs",defs_star.copy() - tt.mean(defs_star))
+        atts = pm.Deterministic("atts",atts_star - tt.mean(atts_star))
+        defs = pm.Deterministic("defs",defs_star - tt.mean(defs_star))
 #+END_SRC
 
 Now, we define our remaining parameters
 #+BEGIN_SRC ipython :session :exports both :results none
 with model:
-    home_theta = pm.Deterministic('home_theta',intercept + home + atts[home_team] + defs[away_team])
-    away_theta = pm.Deterministic('away_theta',intercept + atts[away_team] + defs[home_team])
+    home_theta = pm.Deterministic('home_theta',np.exp(intercept + home + atts[home_team] + defs[away_team]))
+    away_theta = pm.Deterministic('away_theta',np.exp(intercept + atts[away_team] + defs[home_team]))
 
     home_goals = pm.Poisson('home_goals',
                               mu=home_theta,
@@ -279,17 +279,115 @@ with model:
     burned_trace = trace[1000:]
 #+END_SRC
 
-* VISUALIZATION
-** View convergence
+* Convergence
+
 #+BEGIN_SRC ipython :session :file /tmp/image.png :exports both
 from IPython.core.pylabtools import figsize
 figsize(10, 4)
 
-# Pm.Matplot.plot(home)
-# pm.plots.traceplot(trace=trace, varnames=["home"])
-plt.hist(trace['home'], histtype='stepfilled', bins=25, alpha=0.85)
+plt.hist(trace['tau_def'], histtype='stepfilled', bins=25, alpha=0.85)
 
 #+END_SRC
 
 #+RESULTS:
 [[file:/tmp/image.png]]
+
+* Simulation
+
+Simulation code
+#+BEGIN_SRC ipython :session :exports both :results none
+def simulate_season():
+    """
+    Simulate a season once, using one random draw from the mcmc chain.
+    """
+    num_samples = trace['atts'].shape[0]
+    draw = np.random.randint(0, num_samples)
+    atts_draw = pd.DataFrame({'att': trace['atts'][draw, :],})
+    defs_draw = pd.DataFrame({'def': trace['defs'][draw, :],})
+    home_draw = trace['home'][draw]
+    intercept_draw = trace['intercept'][draw]
+    season = df.copy()
+    season = pd.merge(season, atts_draw, left_on='i_home', right_index=True)
+    season = pd.merge(season, defs_draw, left_on='i_home', right_index=True)
+    season = season.rename(columns = {'att': 'att_home', 'def': 'def_home'})
+    season = pd.merge(season, atts_draw, left_on='i_away', right_index=True)
+    season = pd.merge(season, defs_draw, left_on='i_away', right_index=True)
+    season = season.rename(columns = {'att': 'att_away', 'def': 'def_away'})
+    season['home'] = home_draw
+    season['intercept'] = intercept_draw
+    season['home_theta'] = season.apply(lambda x: math.exp(x['intercept'] +
+                                                           x['home'] +
+                                                           x['att_home'] +
+                                                           x['def_away']), axis=1)
+    season['away_theta'] = season.apply(lambda x: math.exp(x['intercept'] +
+                                                           x['att_away'] +
+                                                           x['def_home']), axis=1)
+    season['home_goals'] = season.apply(lambda x: np.random.poisson(x['home_theta']), axis=1)
+    season['away_goals'] = season.apply(lambda x: np.random.poisson(x['away_theta']), axis=1)
+    season['home_outcome'] = season.apply(lambda x: 'win' if x['home_goals'] > x['away_goals'] else
+                                                    'loss' if x['home_goals'] < x['away_goals'] else 'draw', axis=1)
+    season['away_outcome'] = season.apply(lambda x: 'win' if x['home_goals'] < x['away_goals'] else
+                                                    'loss' if x['home_goals'] > x['away_goals'] else 'draw', axis=1)
+    season = season.join(pd.get_dummies(season.home_outcome, prefix='home'))
+    season = season.join(pd.get_dummies(season.away_outcome, prefix='away'))
+    return season
+
+def create_season_table(season):
+    """
+    Using a season dataframe output by simulate_season(), create a summary dataframe with wins, losses, goals for, etc.
+
+    """
+    g = season.groupby('i_home')
+    home = pd.DataFrame({'home_goals': g.home_goals.sum(),
+                         'home_goals_against': g.away_goals.sum(),
+                         'home_wins': g.home_win.sum(),
+                         'home_draws': g.home_draw.sum(),
+                         'home_losses': g.home_loss.sum()
+                         })
+    g = season.groupby('i_away')
+    away = pd.DataFrame({'away_goals': g.away_goals.sum(),
+                         'away_goals_against': g.home_goals.sum(),
+                         'away_wins': g.away_win.sum(),
+                         'away_draws': g.away_draw.sum(),
+                         'away_losses': g.away_loss.sum()
+                         })
+    df = home.join(away)
+    df['wins'] = df.home_wins + df.away_wins
+    df['draws'] = df.home_draws + df.away_draws
+    df['losses'] = df.home_losses + df.away_losses
+    df['points'] = df.wins * 3 + df.draws
+    df['gf'] = df.home_goals + df.away_goals
+    df['ga'] = df.home_goals_against + df.away_goals_against
+    df['gd'] = df.gf - df.ga
+    df = pd.merge(teams, df, left_on='i', right_index=True)
+    df = df.sort_index(by='points', ascending=False)
+    df = df.reset_index()
+    df['position'] = df.index + 1
+    df['champion'] = (df.position == 1).astype(int)
+    df['qualified_for_CL'] = (df.position < 5).astype(int)
+    df['relegated'] = (df.position > 17).astype(int)
+    return df
+
+def simulate_seasons(n=100):
+    dfs = []
+    for i in range(n):
+        s = simulate_season()
+        t = create_season_table(s)
+        t['iteration'] = i
+        dfs.append(t)
+    return pd.concat(dfs, ignore_index=True)
+#+END_SRC
+
+Simulate some seasons
+#+BEGIN_SRC ipython :session :results none
+simuls = simulate_seasons(1000)
+#+END_SRC
+
+Plot how Man City did across the simulations
+#+BEGIN_SRC ipython :session /tmp/image4.png :exports both
+ax = simuls.points[simuls.team == 'MCI'].hist(figsize=(7,5))
+median = simuls.points[simuls.team == 'MCI'].median()
+ax.set_title('Man City: 2013-14 points, 1000 simulations')
+ax.plot([median, median], ax.get_ylim())
+plt.annotate('Median: %s' % median, xy=(median + 1, ax.get_ylim()[1]-10))
+#+END_SRC

@@ -4,7 +4,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
 <head>
 <title>soccer</title>
-<!-- 2017-01-13 Fri 13:31 -->
+<!-- 2017-01-13 Fri 22:43 -->
 <meta  http-equiv="Content-Type" content="text/html;charset=utf-8" />
 <meta  name="generator" content="Org-mode" />
 <meta  name="author" content="Edgar Galvan" />
@@ -481,7 +481,7 @@ Poison
 </p>
 
 \begin{equation}
-y_{gj} \vert \theta_{gj} = Poisson(\theta_{gj})\\
+y_{gj} \vert \theta_{gj} = Poisson(\theta_{gj})
 \end{equation}
 
 <p>
@@ -520,8 +520,8 @@ intercept & \sim Normal(0,0.001)
 <div class="org-src-container">
 
 <pre class="src src-ipython">with pm.Model() as model:
-    home = pm.Normal('home', 0, .0001, testval=0)
-    intercept = pm.Normal('intercept', 0, .0001, testval=0)
+    home = pm.Normal('home', mu=0, tau=.0001, testval=0)
+    intercept = pm.Normal('intercept', mu=0, tau=.0001, testval=0)
 </pre>
 </div>
 
@@ -539,8 +539,8 @@ The hyper-prior (priors on hierarchical model parameter ) are assumed
 <div class="org-src-container">
 
 <pre class="src src-ipython">with model:
-    tau_att = pm.Gamma('tau_att', .1, .1, testval=10)
-    tau_def = pm.Gamma('tau_def', .1, .1, testval=10)
+    tau_att = pm.Gamma('tau_att', alpha=.1, beta=.1, testval=10)
+    tau_def = pm.Gamma('tau_def', alpha=.1, beta=.1, testval=10)
 </pre>
 </div>
 
@@ -549,8 +549,8 @@ The team strengths are modeled ad
 </p>
 \begin{equation}
 \begin{aligned}
-\att_{t} & \sim Normal(0, \tau_{att})\\
-\def_{t} & \sim Normal(0, \tau+{def})
+att_{t} & \sim Normal(0, \tau_{att})\\
+def_{t} & \sim Normal(0, \tau_{def})
 \end{aligned}
 \end{equation}
 
@@ -593,8 +593,8 @@ Trick to code the sum to zero constraint
 <div class="org-src-container">
 
 <pre class="src src-ipython">with model:
-	atts = pm.Deterministic("atts",atts_star.copy() - tt.mean(atts_star))
-	defs = pm.Deterministic("defs",defs_star.copy() - tt.mean(defs_star))
+	atts = pm.Deterministic("atts",atts_star - tt.mean(atts_star))
+	defs = pm.Deterministic("defs",defs_star - tt.mean(defs_star))
 </pre>
 </div>
 
@@ -604,8 +604,8 @@ Now, we define our remaining parameters
 <div class="org-src-container">
 
 <pre class="src src-ipython">with model:
-    home_theta = pm.Deterministic('home_theta',intercept + home + atts[home_team] + defs[away_team])
-    away_theta = pm.Deterministic('away_theta',intercept + atts[away_team] + defs[home_team])
+    home_theta = pm.Deterministic('home_theta',np.exp(intercept + home + atts[home_team] + defs[away_team]))
+    away_theta = pm.Deterministic('away_theta',np.exp(intercept + atts[away_team] + defs[home_team]))
 
     home_goals = pm.Poisson('home_goals',
 			      mu=home_theta,
@@ -634,6 +634,7 @@ with model:
 </div>
 </div>
 
+
 <div id="outline-container-sec-5" class="outline-2">
 <h2 id="sec-5"><span class="section-number-2">5</span> VISUALIZATION</h2>
 <div class="outline-text-2" id="text-5">
@@ -643,10 +644,9 @@ with model:
 <div class="org-src-container">
 
 <pre class="src src-ipython">from IPython.core.pylabtools import figsize
-figsize(.1, .1)
+figsize(10, 4)
 
-# Pm.Matplot.plot(home)
-pm.plots.traceplot(trace=trace, varnames=["home"])
+plt.hist(trace['tau_def'], histtype='stepfilled', bins=25, alpha=0.85)
 </pre>
 </div>
 
@@ -661,7 +661,7 @@ pm.plots.traceplot(trace=trace, varnames=["home"])
 </div>
 <div id="postamble" class="status">
 <p class="author">Author: Edgar Galvan</p>
-<p class="date">Created: 2017-01-13 Fri 13:31</p>
+<p class="date">Created: 2017-01-13 Fri 22:43</p>
 <p class="creator"><a href="http://www.gnu.org/software/emacs/">Emacs</a> 25.1.1 (<a href="http://orgmode.org">Org</a> mode 8.2.10)</p>
 <p class="validation"><a href="http://validator.w3.org/check?uri=referer">Validate</a></p>
 </div>
