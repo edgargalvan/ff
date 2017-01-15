@@ -7,37 +7,29 @@ most of this code http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/
 bayes soccer http://stats.stackexchange.com/questions/120162/how-to-specify-a-hierarchical-bayesian-model-with-sum-to-zero-constraints
 
 * Setup
-** Magic Commands
-#+BEGIN_SRC ipython :session :exports both
+
+** Import modules
+#+BEGIN_SRC ipython :session :exports both :results none
+import math
+import numpy as np
+import pandas as pd
+# from IPython.display import Image, HTML
+import matplotlib.pyplot as plt
+from pylab import rcParams
 %matplotlib inline
 %config InlineBackend.figure_format = 'png'
+import pymc3 as pm, theano.tensor as tt
 
 # check python version, should be python3
 import sys
 sys.version
+
+# set figure size
+rcParams['figure.figsize'] = 3,1.5
 #+END_SRC
 
-#+RESULTS:
-: 3\.5\.2
-
-** Import
-#+BEGIN_SRC ipython :session :exports both :results none
-import os
-import math
-import warnings
-warnings.filterwarnings('ignore')
-
-from IPython.display import Image, HTML
-from IPython.core.pylabtools import figsize
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import pymc3 as pm
-import theano.tensor as tt
-#+END_SRC
-
-* Prepare Data
-** Read Data
+** Prepare Data
+*** Read Data
 #+BEGIN_SRC ipython :session :exports both
 data_file = 'premier_league.txt'
 df = pd.read_csv(data_file, sep='\t', index_col=0,)
@@ -63,8 +55,8 @@ Chelsea         0–0  3–1  3–0  1–2  1–0  4–0  2–2  0–0
 Crystal Palace  1–1  0–1  1–0  3–1  0–2  0–1  3–1  1–0
 #+end_example
 
-** Munging
-*** make into a long dataframe
+*** Munging
+**** make into a long dataframe
 #+BEGIN_SRC ipython :session :exports both
 df.index = df.columns
 rows = []
@@ -86,7 +78,7 @@ df.head()
 : 3  ARS  CRY           2           0
 : 4  ARS  EVE           1           1
 
-*** create look-up table to map team names to a UIN
+**** create look-up table to map team names to a UIN
 #+BEGIN_SRC ipython :session :exports both
 teams = df.home.unique()
 teams = pd.DataFrame(teams, columns=['team'])
@@ -102,7 +94,7 @@ teams.head()
 : 3  CHE  3
 : 4  CRY  4
 
-*** create away and home columns
+**** create away and home columns
 #+BEGIN_SRC ipython :session :exports both
 df = pd.merge(df, teams, left_on='home', right_on='team', how='left')
 df = df.rename(columns = {'i': 'i_home'}).drop('team', 1)
@@ -119,7 +111,7 @@ df.head()
 : 3  ARS  CRY           2           0       0       4
 : 4  ARS  EVE           1           1       0       5
 
-** Extract data into arrays for pymc
+*** Extract data into arrays for pymc
 #+BEGIN_SRC ipython :session :exports both :results none
 observed_home_goals = df.home_score.values
 observed_away_goals = df.away_score.values
@@ -129,7 +121,7 @@ num_teams = len(df.i_home.unique())
 num_games = len(home_team)
 #+END_SRC
 
-** Initial value for strength parameters
+*** Initial value for strength parameters
 #+BEGIN_SRC ipython :session :exports both :results none
 g = df.groupby('i_away')
 att_starting_points = np.log(g.away_score.mean()) # log of mean scores when away
@@ -186,9 +178,10 @@ intercept & \sim Normal(0,0.001)
 \end{equation}
 
 #+BEGIN_SRC ipython :session :exports both :results none
+model = pm.Model()
 with pm.Model() as model:
-    home = pm.Normal('home', mu=0, tau=.0001, testval=0)
-    intercept = pm.Normal('intercept', mu=0, tau=.0001, testval=0)
+    home = pm.Normal('home', mu=0, tau=.0001)
+    intercept = pm.Normal('intercept', mu=0, tau=.0001)
 #+END_SRC
 
 The hyper-prior (priors on hierarchical model parameter ) are assumed
@@ -202,8 +195,8 @@ The hyper-prior (priors on hierarchical model parameter ) are assumed
 
 #+BEGIN_SRC ipython :session :exports both :results none
 with model:
-    tau_att = pm.Gamma('tau_att', alpha=.1, beta=.1, testval=10)
-    tau_def = pm.Gamma('tau_def', alpha=.1, beta=.1, testval=10)
+    tau_att = pm.Gamma('tau_att', alpha=.1, beta=.1)
+    tau_def = pm.Gamma('tau_def', alpha=.1, beta=.1)
 #+END_SRC
 
 The team strengths are modeled ad
@@ -220,14 +213,14 @@ with model:
     atts_star = pm.Normal("atts_star",
                             mu=0,
                             tau=tau_att,
-                            shape=num_teams,
-                            testval=att_starting_points.values)
+                            shape=num_teams)
+                            # testval=att_starting_points.values)
 
     defs_star = pm.Normal("defs_star",
                             mu=0,
                             tau=tau_def,
-                            shape=num_teams,
-                            testval=def_starting_points.values)
+                            shape=num_teams)
+                            # testval=def_starting_points.values)
 #+END_SRC
 
 The Biangiardo paper has more model parameters but they seem to
@@ -253,37 +246,36 @@ with model:
 Now, we define our remaining parameters
 #+BEGIN_SRC ipython :session :exports both :results none
 with model:
-    home_theta = pm.Deterministic('home_theta',np.exp(intercept + home + atts[home_team] + defs[away_team]))
-    away_theta = pm.Deterministic('away_theta',np.exp(intercept + atts[away_team] + defs[home_team]))
+    # home_theta = pm.Deterministic('home_theta',np.exp(intercept + home + atts[home_team] + defs[away_team]))
+    # away_theta = pm.Deterministic('away_theta',np.exp(intercept + atts[away_team] + defs[home_team]))
+    home_theta = tt.exp(intercept + home + atts[home_team] + defs[away_team])
+    away_theta = tt.exp(intercept + atts[away_team] + defs[home_team])
 
     home_goals = pm.Poisson('home_goals',
                               mu=home_theta,
-                              testval=observed_home_goals,
+                              # testval=observed_home_goals,
                               observed=True)
 
     away_goals = pm.Poisson('away_goals',
                               mu=away_theta,
-                              testval=observed_away_goals,
+                              # testval=observed_away_goals,
                               observed=True)
 
 #+END_SRC
 
 #+BEGIN_SRC ipython :session :exports both :results none
-# TODO: Add MAP and increase samples according to this pymc2 code
-# map_ = pm.MAP( mcmc )
-# map_.fit()
-# mcmc.sample(20000, 4000, 2)
 with model:
-    step = pm.Metropolis()
-    trace = pm.sample(20000,step=step)
+    start = pm.find_MAP()
+    step = pm.NUTS(state=start)
+    trace = pm.sample(20000,step,init=start)
+
+    pm.traceplot(trace)
     burned_trace = trace[1000:]
 #+END_SRC
 
 * Convergence
 
 #+BEGIN_SRC ipython :session :file /tmp/image.png :exports both
-from IPython.core.pylabtools import figsize
-figsize(10, 4)
 
 plt.hist(trace['tau_def'], histtype='stepfilled', bins=25, alpha=0.85)
 
@@ -380,7 +372,7 @@ def simulate_seasons(n=100):
 
 Simulate some seasons
 #+BEGIN_SRC ipython :session :results none
-simuls = simulate_seasons(1000)
+simuls = simulate_seasons(100)
 #+END_SRC
 
 Plot how Man City did across the simulations
