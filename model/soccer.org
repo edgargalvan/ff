@@ -383,3 +383,48 @@ ax.set_title('Man City: 2013-14 points, 1000 simulations')
 ax.plot([median, median], ax.get_ylim())
 plt.annotate('Median: %s' % median, xy=(median + 1, ax.get_ylim()[1]-10))
 #+END_SRC
+
+
+#+BEGIN_SRC ipython :session :file /tmp/image5.png :exports both
+import seaborn as sns
+observed_season = 'premier_league_13_14_table.csv'
+df_observed = pd.read_csv(observed_season)
+df_observed.loc[df_observed.QR.isnull(), 'QR'] = ''
+
+g = simuls.groupby('team')
+season_hdis = pd.DataFrame({'points_lower': g.points.quantile(.05),
+                            'points_upper': g.points.quantile(.95),
+                            'goals_for_lower': g.gf.quantile(.05),
+                            'goals_for_median': g.gf.median(),
+                            'goals_for_upper': g.gf.quantile(.95),
+                            'goals_against_lower': g.ga.quantile(.05),
+                            'goals_against_upper': g.ga.quantile(.95),
+                            })
+season_hdis = pd.merge(season_hdis, df_observed, left_index=True, right_on='team')
+column_order = ['team', 'points_lower', 'Pts', 'points_upper',
+                'goals_for_lower', 'GF', 'goals_for_median', 'goals_for_upper',
+                'goals_against_lower', 'GA', 'goals_against_upper',]
+season_hdis = season_hdis[column_order]
+season_hdis['relative_goals_upper'] = season_hdis.goals_for_upper - season_hdis.goals_for_median
+season_hdis['relative_goals_lower'] = season_hdis.goals_for_median - season_hdis.goals_for_lower
+season_hdis = season_hdis.sort_index(by='GF')
+season_hdis = season_hdis.reset_index()
+season_hdis['x'] = season_hdis.index + .5
+season_hdis
+
+fig, axs = plt.subplots(figsize=(10,6))
+axs.scatter(season_hdis.x, season_hdis.GF, c=sns.palettes.color_palette()[4], zorder = 10, label='Actual Goals For')
+axs.errorbar(season_hdis.x, season_hdis.goals_for_median,
+             yerr=(season_hdis[['relative_goals_lower', 'relative_goals_upper']].values).T,
+             fmt='s', c=sns.palettes.color_palette()[5], label='Simulations')
+axs.set_title('Actual Goals For, and 90% Interval from Simulations, by Team')
+axs.set_xlabel('Team')
+axs.set_ylabel('Goals Scored')
+axs.set_xlim(0, 20)
+axs.legend()
+_= axs.set_xticks(season_hdis.index + .5)
+_= axs.set_xticklabels(season_hdis['team'].values, rotation=45)
+#+END_SRC
+
+#+RESULTS:
+[[file:/tmp/image5.png]]
