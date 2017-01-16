@@ -7,13 +7,16 @@ http://pymc-devs.github.io/pymc3/notebooks/rugby_analytics.html
 #+BEGIN_SRC ipython :session :results none
 import numpy as np
 import pandas as pd
-from io import StringIO
+try:
+    from StringIO import StringIO
+except ImportError:
+    from io import StringIO
 %matplotlib inline
 import pymc3 as pm, theano.tensor as tt
 
 #+END_SRC
 ** import (create) data
-#+BEGIN_SRC ipython :session :results none
+#+BEGIN_SRC ipython :session
 data_csv = StringIO("""home_team,away_team,home_score,away_score
 Wales,Italy,23,15
 France,England,26,24
@@ -32,8 +35,16 @@ Wales,Scotland,51,3
 France,Ireland,20,22""")
 
 df = pd.read_csv(data_csv)
-
+df.head()
 #+END_SRC
+
+#+RESULTS:
+:   home_team away_team  home_score  away_score
+: 0     Wales     Italy          23          15
+: 1    France   England          26          24
+: 2   Ireland  Scotland          28           6
+: 3   Ireland     Wales          26           3
+: 4  Scotland   England           0          20
 
 *** munging
 #+BEGIN_SRC ipython :session :results none
@@ -60,6 +71,18 @@ att_starting_points = np.log(g.away_score.mean())
 g = df.groupby('i_home')
 def_starting_points = -np.log(g.away_score.mean())
 #+END_SRC
+
+#+BEGIN_SRC ipython :session
+df.head()
+#+END_SRC
+
+#+RESULTS:
+:   home_team away_team  home_score  away_score  i_home  i_away
+: 0     Wales     Italy          23          15       0       4
+: 1    France   England          26          24       1       5
+: 2   Ireland  Scotland          28           6       2       3
+: 3   Ireland     Wales          26           3       2       0
+: 4  Scotland   England           0          20       3       5
 
 * Model
 #+BEGIN_SRC ipython :session :results none
@@ -96,10 +119,9 @@ with pm.Model() as model:
 with model:
 
     start = pm.find_MAP()
-    step = pm.NUTS(state=start)
-    trace = pm.sample(2000, step, init=start)
-
-    pm.traceplot(trace)
+    # step = pm.NUTS(state=start)
+    # trace = pm.sample(2000, step, init=start)
+    # pm.traceplot(trace)
 #+END_SRC
 
 #+RESULTS:

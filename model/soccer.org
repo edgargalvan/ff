@@ -7,26 +7,29 @@ most of this code http://danielweitzenfeld.github.io/passtheroc/blog/2014/10/28/
 bayes soccer http://stats.stackexchange.com/questions/120162/how-to-specify-a-hierarchical-bayesian-model-with-sum-to-zero-constraints
 
 * Setup
-
 ** Import modules
-#+BEGIN_SRC ipython :session :exports both :results none
+#+BEGIN_SRC ipython :session :exports both
 import math
 import numpy as np
 import pandas as pd
 # from IPython.display import Image, HTML
+from IPython.core.debugger import Tracer
 import matplotlib.pyplot as plt
 from pylab import rcParams
 %matplotlib inline
 %config InlineBackend.figure_format = 'png'
 import pymc3 as pm, theano.tensor as tt
 
+# set figure size
+rcParams['figure.figsize'] = 3,1.5
+
 # check python version, should be python3
 import sys
 sys.version
-
-# set figure size
-rcParams['figure.figsize'] = 3,1.5
 #+END_SRC
+
+#+RESULTS:
+: 2\.7\.12
 
 ** Prepare Data
 *** Read Data
@@ -40,19 +43,19 @@ df.head()
 #+begin_example
                 ARS  AST  CAR  CHE  CRY  EVE  FUL  HUL  LIV  MCI  MUN  NEW  \
 Home ╲ Away
-Arsenal         NaN  1–3  2–0  0–0  2–0  1–1  2–0  2–0  2–0  1–1  0–0  3–0
-Aston Villa     1–2  NaN  2–0  1–0  0–1  0–2  1–2  3–1  0–1  3–2  0–3  1–2
-Cardiff City    0–3  0–0  NaN  1–2  0–3  0–0  3–1  0–4  3–6  3–2  2–2  1–2
-Chelsea         6–0  2–1  4–1  NaN  2–1  1–0  2–0  2–0  2–1  2–1  3–1  3–0
-Crystal Palace  0–2  1–0  2–0  1–0  NaN  0–0  1–4  1–0  3–3  0–2  0–2  0–3
+Arsenal         NaN  1-3  2-0  0-0  2-0  1-1  2-0  2-0  2-0  1-1  0-0  3-0
+Aston Villa     1-2  NaN  2-0  1-0  0-1  0-2  1-2  3-1  0-1  3-2  0-3  1-2
+Cardiff City    0-3  0-0  NaN  1-2  0-3  0-0  3-1  0-4  3-6  3-2  2-2  1-2
+Chelsea         6-0  2-1  4-1  NaN  2-1  1-0  2-0  2-0  2-1  2-1  3-1  3-0
+Crystal Palace  0-2  1-0  2-0  1-0  NaN  0-0  1-4  1-0  3-3  0-2  0-2  0-3
 
                 NOR  SOU  STK  SUN  SWA  TOT  WBA  WHU
 Home ╲ Away
-Arsenal         4–1  2–0  3–1  4–1  2–2  1–0  1–0  3–1
-Aston Villa     4–1  0–0  1–4  0–0  1–1  0–2  4–3  0–2
-Cardiff City    2–1  0–3  1–1  2–2  1–0  0–1  1–0  0–2
-Chelsea         0–0  3–1  3–0  1–2  1–0  4–0  2–2  0–0
-Crystal Palace  1–1  0–1  1–0  3–1  0–2  0–1  3–1  1–0
+Arsenal         4-1  2-0  3-1  4-1  2-2  1-0  1-0  3-1
+Aston Villa     4-1  0-0  1-4  0-0  1-1  0-2  4-3  0-2
+Cardiff City    2-1  0-3  1-1  2-2  1-0  0-1  1-0  0-2
+Chelsea         0-0  3-1  3-0  1-2  1-0  4-0  2-2  0-0
+Crystal Palace  1-1  0-1  1-0  3-1  0-2  0-1  3-1  1-0
 #+end_example
 
 *** Munging
@@ -61,11 +64,11 @@ Crystal Palace  1–1  0–1  1–0  3–1  0–2  0–1  3–1  1–0
 df.index = df.columns
 rows = []
 for i in df.index:
-    for c in df.columns:
-        if i == c: continue
-        score = df.ix[i, c]
-        score = [int(row) for row in score.split('–')]
-        rows.append([i, c, score[0], score[1]])
+    for j in df.columns:
+        if i == j: continue
+        score = df.ix[i, j]
+        score = [int(row) for row in score.split('-')]
+        rows.append([i, j, score[0], score[1]])
 df = pd.DataFrame(rows, columns = ['home', 'away', 'home_score', 'away_score'])
 df.head()
 #+END_SRC
@@ -132,14 +135,14 @@ def_starting_points = -np.log(g.away_score.mean())
 * Model
  Table below is a list of basic assumptions made in the current model.
 
-| Parameter                                   | Property            |
-|---------------------------------------------+---------------------|
-| Point scored $y_{gi}$                       | Observable          |
-| Scoring intensity $\theta_{gi}$             | Unobservable        |
-| Attacking and defensive strengths           | Unovservable        |
-| Expected Performance                        | Unit of performance |
-| Distribution of $\theta_{gi}$               | ~Poisson            |
-| Distribution of $y_{gi} \vert \theta_{gi} $ | ~Poisson            |
+| Parameter                                   | Property     |
+|---------------------------------------------+--------------|
+| Point scored $y_{gi}$                       | Observable   |
+| Scoring intensity $\theta_{gi}$             | Unobservable |
+| Attacking and defensive strengths           | Unovservable |
+| Expected Performance                        | Goals        |
+| Distribution of $\theta_{gi}$               | ~Poisson     |
+| Distribution of $y_{gi} \vert \theta_{gi} $ | ~Poisson     |
 
 The observed counts (score) $y = (y_{g1},y_{g2})$ is modeled as independent
 Poison
@@ -177,13 +180,6 @@ intercept & \sim Normal(0,0.001)
 \end{aligned}
 \end{equation}
 
-#+BEGIN_SRC ipython :session :exports both :results none
-model = pm.Model()
-with pm.Model() as model:
-    home = pm.Normal('home', mu=0, tau=.0001)
-    intercept = pm.Normal('intercept', mu=0, tau=.0001)
-#+END_SRC
-
 The hyper-prior (priors on hierarchical model parameter ) are assumed
 
   \begin{equation}
@@ -193,12 +189,6 @@ The hyper-prior (priors on hierarchical model parameter ) are assumed
   \end{aligned}
   \end{equation}
 
-#+BEGIN_SRC ipython :session :exports both :results none
-with model:
-    tau_att = pm.Gamma('tau_att', alpha=.1, beta=.1)
-    tau_def = pm.Gamma('tau_def', alpha=.1, beta=.1)
-#+END_SRC
-
 The team strengths are modeled ad
   \begin{equation}
   \begin{aligned}
@@ -206,22 +196,6 @@ The team strengths are modeled ad
   def_{t} & \sim Normal(0, \tau_{def})
   \end{aligned}
   \end{equation}
-
-#+BEGIN_SRC ipython :session :exports both :results none
-#team-specific parameters
-with model:
-    atts_star = pm.Normal("atts_star",
-                            mu=0,
-                            tau=tau_att,
-                            shape=num_teams)
-                            # testval=att_starting_points.values)
-
-    defs_star = pm.Normal("defs_star",
-                            mu=0,
-                            tau=tau_def,
-                            shape=num_teams)
-                            # testval=def_starting_points.values)
-#+END_SRC
 
 The Biangiardo paper has more model parameters but they seem to
 over-constrain the problem. To ensure identifiability (that no two
@@ -235,40 +209,47 @@ parameterizations are observationally equivalent), a sum-to-zero constraint
   \end{aligned}
   \end{equation}
 
-
-Trick to code the sum to zero constraint
 #+BEGIN_SRC ipython :session :exports both :results none
-with model:
-        atts = pm.Deterministic("atts",atts_star - tt.mean(atts_star))
-        defs = pm.Deterministic("defs",defs_star - tt.mean(defs_star))
-#+END_SRC
+model = pm.Model()
+with pm.Model() as model:
+    # global model parameters
+    home       = pm.Normal('home',      0, tau=.0001)
+    tau_att    = pm.Gamma('tau_att',   .1, .1)
+    tau_def    = pm.Gamma('tau_def',   .1, .1)
+    intercept  = pm.Normal('intercept', 0, tau=.0001)
 
-Now, we define our remaining parameters
-#+BEGIN_SRC ipython :session :exports both :results none
-with model:
-    # home_theta = pm.Deterministic('home_theta',np.exp(intercept + home + atts[home_team] + defs[away_team]))
-    # away_theta = pm.Deterministic('away_theta',np.exp(intercept + atts[away_team] + defs[home_team]))
+    #team-specific parameters
+    atts_star  = pm.Normal('atts_star',
+                            mu    = 0,
+                            tau   = tau_att,
+                            shape = num_teams)
+    defs_star  = pm.Normal('defs_star',
+                            mu    = 0,
+                            tau   = tau_def,
+                            shape = num_teams)
+
+    atts       = pm.Deterministic('atts', atts_star - tt.mean(atts_star))
+    defs       = pm.Deterministic('defs', defs_star - tt.mean(defs_star))
     home_theta = tt.exp(intercept + home + atts[home_team] + defs[away_team])
     away_theta = tt.exp(intercept + atts[away_team] + defs[home_team])
 
+    # likelihood of observed data
     home_goals = pm.Poisson('home_goals',
                               mu=home_theta,
-                              # testval=observed_home_goals,
-                              observed=True)
+                              observed=observed_home_goals)
 
     away_goals = pm.Poisson('away_goals',
                               mu=away_theta,
-                              # testval=observed_away_goals,
-                              observed=True)
+                              observed=observed_away_goals)
 
 #+END_SRC
+
 
 #+BEGIN_SRC ipython :session :exports both :results none
 with model:
     start = pm.find_MAP()
     step = pm.NUTS(state=start)
     trace = pm.sample(20000,step,init=start)
-
     pm.traceplot(trace)
     burned_trace = trace[1000:]
 #+END_SRC
@@ -276,14 +257,13 @@ with model:
 * Convergence
 
 #+BEGIN_SRC ipython :session :file /tmp/image.png :exports both
-
-plt.hist(trace['tau_def'], histtype='stepfilled', bins=25, alpha=0.85)
-
+plt.hist(trace['tau_att'], histtype='stepfilled', bins=25, alpha=0.85)
 #+END_SRC
 
 #+RESULTS:
 [[file:/tmp/image.png]]
 
+*
 * Simulation
 
 Simulation code
@@ -320,6 +300,7 @@ def simulate_season():
                                                     'loss' if x['home_goals'] < x['away_goals'] else 'draw', axis=1)
     season['away_outcome'] = season.apply(lambda x: 'win' if x['home_goals'] < x['away_goals'] else
                                                     'loss' if x['home_goals'] > x['away_goals'] else 'draw', axis=1)
+    # Tracer()()
     season = season.join(pd.get_dummies(season.home_outcome, prefix='home'))
     season = season.join(pd.get_dummies(season.away_outcome, prefix='away'))
     return season
@@ -372,18 +353,8 @@ def simulate_seasons(n=100):
 
 Simulate some seasons
 #+BEGIN_SRC ipython :session :results none
-simuls = simulate_seasons(100)
+simuls = simulate_seasons(1000)
 #+END_SRC
-
-Plot how Man City did across the simulations
-#+BEGIN_SRC ipython :session /tmp/image4.png :exports both
-ax = simuls.points[simuls.team == 'MCI'].hist(figsize=(7,5))
-median = simuls.points[simuls.team == 'MCI'].median()
-ax.set_title('Man City: 2013-14 points, 1000 simulations')
-ax.plot([median, median], ax.get_ylim())
-plt.annotate('Median: %s' % median, xy=(median + 1, ax.get_ylim()[1]-10))
-#+END_SRC
-
 
 #+BEGIN_SRC ipython :session :file /tmp/image5.png :exports both
 import seaborn as sns
