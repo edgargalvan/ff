@@ -46,7 +46,7 @@ for i in range(2,16):
 		# grap passing yards of opp's opp, for prev week. [TODO: this will bug if opp's opp had bye-week]
 		pps = s.as_aggregate()
 		passing_yds_givenup = np.append(passing_yds_givenup,sum(pp.passing_yds for pp in pps))
-	
+
 
 print passing_yds
 print passing_yds_givenup

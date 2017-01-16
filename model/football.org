@@ -1,0 +1,73 @@
+* Meta
+#+SETUPFILE: ~/bin/git/org-minimal-html-theme/setup/theme-minimal.setup
+
+* Import modules
+#+BEGIN_SRC ipython :session :exports both :results none
+import nfldb
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from IPython.core.debugger import Tracer
+#+END_SRC
+
+* Get Data from nfldb
+Create data base with passing yards for the 2015 regular season
+#+BEGIN_SRC ipython :session :results none
+  # selftart up nfldb
+  db = nfldb.connect()
+  q = nfldb.Query(db)
+
+  season_year = 2015
+  season_type = 'Regular'
+  # play id
+  q.game(season_year=season_year, season_type=season_type)
+  # plays = g.as_plays()
+
+  # initialize
+  home_team = []
+  away_team = []
+  gamekey   = []
+  home_yds = []
+  away_yds = []
+  week = []
+
+  # loop through games
+  for i in range(1,16):
+      # find out who plays who
+      q = nfldb.Query(db).game(season_year=season_year,season_type=season_type,week=i)
+      num_games = 0
+      for g in q.as_games():
+          home_team.append(g.home_team)
+          away_team.append(g.away_team)
+          gamekey.append(g.gamekey)
+          week.append(i)
+          num_games += 1
+
+      # cycle through each playplayer for yards
+      for i in range(0, num_games):
+          # home team yards
+          q = nfldb.Query(db).game(gamekey=gamekey[i],team=home_team[i])
+          q.play_player(team=home_team[i])
+          pps = q.as_aggregate()
+          home_yds.append(sum(pp.passing_yds for pp in pps))
+
+          # away team yards
+          q = nfldb.Query(db).game(gamekey=gamekey[i],team=away_team[i])
+          q.play_player(team=away_team[i])
+          pps = q.as_aggregate()
+          away_yds.append(sum(pp.passing_yds for pp in pps))
+
+  # save to a new dataframe
+  df = pd.DataFrame({'home_team':home_team,
+                     'away_team':away_team,
+                     'home_yds':home_yds,
+                     'away_yds':away_yds,
+                     'week':week,
+                     'gamekey':gamekey})
+df.to_csv('out.csv')
+#+END_SRC
+
+#+BEGIN_SRC ipython :session :results none
+data_file = 'out.csv'
+df = pd.read_csv(data_file, sep='\t', index_col=0,)
+#+END_SRC
