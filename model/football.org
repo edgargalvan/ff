@@ -26,57 +26,57 @@
 ** nfldb
 Create data base with passing yards for the 2015 regular season with nfldb
 #+BEGIN_SRC ipython :session :results none
-    # selftart up nfldb
-    db = nfldb.connect()
-    q = nfldb.Query(db)
+  # selftart up nfldb
+  db = nfldb.connect()
+  q = nfldb.Query(db)
 
-    season_year = 2015
-    season_type = 'Regular'
-    # play id
-    q.game(season_year=season_year, season_type=season_type)
-    # plays = g.as_plays()
+  season_year = 2015
+  season_type = 'Regular'
+  # play id
+  q.game(season_year=season_year, season_type=season_type)
+  # plays = g.as_plays()
 
-    # initialize
-    home_team = []
-    away_team = []
-    gamekey   = []
-    home_yds = []
-    away_yds = []
-    week = []
+  # initialize
+  home_team = []
+  away_team = []
+  gamekey   = []
+  home_yds = []
+  away_yds = []
+  week = []
+  num_games = 0
 
-    # loop through games
-    for i in range(1,17):
-        # find out who plays who
-        q = nfldb.Query(db).game(season_year=season_year,season_type=season_type,week=i)
-        num_games = 0
-        for g in q.as_games():
-            home_team.append(g.home_team)
-            away_team.append(g.away_team)
-            gamekey.append(g.gamekey)
-            week.append(i)
-            num_games += 1
+  # loop through games
+  for i in range(1,18):
+      # find out who plays who
+      q = nfldb.Query(db).game(season_year=season_year,season_type=season_type,week=i)
+      for g in q.as_games():
+          home_team.append(g.home_team)
+          away_team.append(g.away_team)
+          gamekey.append(g.gamekey)
+          week.append(i)
+          num_games += 1
 
-        # cycle through each playplayer for yards
-        for i in range(0, num_games):
-            # home team yards
-            q = nfldb.Query(db).game(gamekey=gamekey[i],team=home_team[i])
-            q.play_player(team=home_team[i])
-            pps = q.as_aggregate()
-            home_yds.append(sum(pp.passing_yds for pp in pps))
+  # cycle through each playplayer for yards
+  for i in range(0, num_games):
+      # home team yards
+      q = nfldb.Query(db).game(gamekey=gamekey[i],team=home_team[i])
+      q.play_player(team=home_team[i])
+      pps = q.as_aggregate()
+      home_yds.append(sum(pp.passing_yds for pp in pps))
+          
+      # away team yards
+      q = nfldb.Query(db).game(gamekey=gamekey[i],team=away_team[i])
+      q.play_player(team=away_team[i])
+      pps = q.as_aggregate()
+      away_yds.append(sum(pp.passing_yds for pp in pps))
 
-            # away team yards
-            q = nfldb.Query(db).game(gamekey=gamekey[i],team=away_team[i])
-            q.play_player(team=away_team[i])
-            pps = q.as_aggregate()
-            away_yds.append(sum(pp.passing_yds for pp in pps))
-
-    # save to a new dataframe
-    df = pd.DataFrame({'home_team':home_team,
-                       'away_team':away_team,
-                       'home_yds':home_yds,
-                       'away_yds':away_yds,
-                       'week':week,
-                       'gamekey':gamekey})
+  # save to a new dataframe
+  df = pd.DataFrame({'home_team':home_team,
+                     'away_team':away_team,
+                     'home_yds':home_yds,
+                     'away_yds':away_yds,
+                     'week':week,
+                     'gamekey':gamekey})
 #+END_SRC
 
 ** Munging
@@ -129,42 +129,40 @@ Create away and home columns
 #+RESULTS:
 #+begin_example
 away_team
-BAL    3190
-TB     3241
-CIN    3286
-BUF    3409
-DET    3428
-TEN    3487
-MIA    3542
-GB     3551
-IND    3555
-PIT    3578
-OAK    3589
-JAC    3611
-CHI    3626
-ARI    3629
-STL    3669
-NO     3670
-DEN    3708
-SD     3717
-SEA    3786
-NYJ    3797
-MIN    3845
-WAS    3853
-HOU    3855
-PHI    3869
-DAL    3870
-SF     3906
-CAR    3981
-ATL    4067
-NE     4096
-KC     4156
-NYG    4219
-CLE    4226
+STL    2931
+MIN    3246
+KC     3493
+BUF    3600
+SF     3646
+DAL    3677
+GB     3825
+CHI    3843
+CAR    3873
+TEN    3893
+IND    3928
+TB     4044
+SEA    4059
+HOU    4079
+CIN    4104
+OAK    4129
+CLE    4156
+NYJ    4170
+DEN    4216
+MIA    4233
+WAS    4294
+PHI    4341
+JAC    4428
+BAL    4462
+DET    4463
+NYG    4515
+ATL    4602
+ARI    4775
+NE     4812
+PIT    4817
+SD     4856
+NO     5213
 dtype: int64
 #+end_example
-
-
 
 * Modeling
 ** Initial parameter values
