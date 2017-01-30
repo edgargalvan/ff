@@ -24,13 +24,13 @@
 
 * The data
 ** nfldb
-Create data base with passing yards for the 2015 regular season with nfldb
+Create data base with passing yards for the 2014 regular season with nfldb
 #+BEGIN_SRC ipython :session :results none
   # selftart up nfldb
   db = nfldb.connect()
   q = nfldb.Query(db)
 
-  season_year = 2015
+  season_year = 2014
   season_type = 'Regular'
   # play id
   q.game(season_year=season_year, season_type=season_type)
@@ -84,6 +84,8 @@ Create a look-up table for team names
 #+BEGIN_SRC ipython :session :exports both
   teams = df.home_team.unique()
   teams = pd.DataFrame(teams, columns=['team'])
+  teams.sort('team',inplace=True) # make alphabetical
+  teams.reset_index(drop=True,inplace=True)
   teams['i'] = teams.index
   teams.head()
   teams.to_csv('teams.csv')
@@ -104,11 +106,11 @@ Create away and home columns
 
 #+RESULTS:
 :   away_team  away_yds gamekey home_team  home_yds  week  i_home  i_away
-: 0       TEN       209   56515        TB       210     1       0      29
-: 1       BAL       117   56513       DEN       175     1       1      28
-: 2       DET       246   56512        SD       404     1       2      27
-: 3       IND       243   56504       BUF       195     1       3      20
-: 4        KC       243   56506       HOU       334     1       4      21
+: 0        SF       201   56181       DAL       281     1       0      27
+: 1        GB       189   56170       SEA       191     1       1      26
+: 2        NO       333   56171       ATL       448     1       2      31
+: 3       CIN       301   56172       BAL       345     1       3      19
+: 4       BUF       173   56173       CHI       349     1       4      17
 
 # #+BEGIN_SRC ipython :session :results none
 #   df = pd.read_csv('out.csv', index_col=0)
@@ -129,38 +131,38 @@ Create away and home columns
 #+RESULTS:
 #+begin_example
 away_team
-STL    2931
-MIN    3246
-KC     3493
-BUF    3600
-SF     3646
-DAL    3677
-GB     3825
-CHI    3843
-CAR    3873
-TEN    3893
-IND    3928
-TB     4044
-SEA    4059
-HOU    4079
-CIN    4104
-OAK    4129
-CLE    4156
-NYJ    4170
-DEN    4216
-MIA    4233
-WAS    4294
-PHI    4341
-JAC    4428
-BAL    4462
-DET    4463
-NYG    4515
-ATL    4602
-ARI    4775
-NE     4812
-PIT    4817
-SD     4856
-NO     5213
+NYJ    3206
+CIN    3331
+SF     3407
+KC     3447
+JAC    3450
+OAK    3457
+HOU    3460
+SEA    3492
+MIN    3583
+TB     3623
+CLE    3691
+STL    3692
+TEN    3698
+CAR    3828
+BUF    3856
+BAL    3986
+ARI    3990
+DAL    4008
+CHI    4035
+MIA    4077
+DET    4274
+NE     4291
+SD     4296
+GB     4447
+WAS    4461
+NYG    4470
+PHI    4581
+PIT    4704
+ATL    4758
+DEN    4779
+NO     4952
+IND    5062
 dtype: int64
 #+end_example
 
@@ -238,7 +240,6 @@ plt.hist(trace['tau_att'], histtype='stepfilled', bins=25, alpha=0.85)
 
 ** Confidence Intervals
 *** Attack strength
-[BUG: CLE does not have the best passing in the league]
 #+BEGIN_SRC ipython :session :file ./img/fig2.png :exports both
 pm.forestplot(trace, varnames=['atts'], ylabels=teams['team'], main="Team Passing Offense")
 #+END_SRC
@@ -374,6 +375,4 @@ simuls = simulate_seasons(1000)
 
 #+RESULTS:
 [[file:./img/fig5.png]]
-
-[BUG: These aren't right]
 #+RESULTS:
