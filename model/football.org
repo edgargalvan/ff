@@ -1,4 +1,5 @@
-#+SETUPFILE: ~/bin/git/org-minimal-html-theme/setup/theme-minimal.setup
+#+SETUPFILE: ~/bin/git/org-html-themes/setup/theme-readtheorg.setup
+#+HTML_HEAD: <style> div[class^='outline'] {margin-top:25px; margin-bottom:15px;}</style>
 * Import modules
 #+BEGIN_SRC emacs-lisp :session
 (setq python-shell-interpreter "ipython2") ;; make sure we use python 2
@@ -7,7 +8,10 @@
 #+RESULTS:
 : ipython2
 
+#+RESULTS:
+
 #+BEGIN_SRC ipython :session :exports both :results none
+  import sys
   import math
   import nfldb
   import matplotlib.pyplot as plt
@@ -20,6 +24,12 @@
   import theano.tensor as tt
   import pymc3 as pm
   from IPython.core.debugger import Tracer
+
+  sys.setrecursionlimit(4000)
+  sns.set(style="darkgrid", palette="muted")
+  pd.set_option('display.mpl_style', 'default')
+  plt.rcParams['figure.figsize'] = 12, 4
+  np.random.seed(0)
 #+END_SRC
 
 * The data
@@ -173,9 +183,10 @@ dtype: int64
   def_starting_points = -np.log(g.away_yds.mean())
 #+END_SRC
 
+
 ** Priors
 #+BEGIN_SRC ipython :session :exports both :results none
-  model = pm.Model()
+  from pymc3.distributions.timeseries import GaussianRandomWalk
   with pm.Model() as model:
       # global model parameters
       home       = pm.Normal('home',      0, tau=.0001)
@@ -184,23 +195,28 @@ dtype: int64
       intercept  = pm.Normal('intercept', 0, tau=.0001)
 
       #team-specific parameters
-      atts_star  = pm.Normal('atts_star',
-                              mu    = 0,
-                              tau   = tau_att,
-                              shape = num_teams)
-      defs_star  = pm.Normal('defs_star',
-                              mu    = 0,
-                              tau   = tau_def,
-                              shape = num_teams)
-#+END_SRC
+      # atts_star  = pm.Normal('atts_star',
+      #                         mu    = 0,
+      #                         tau   = tau_att,
+      #                         shape = num_teams)
+      # defs_star  = pm.Normal('defs_star',
+      #                         mu    = 0,
+      #                         tau   = tau_def,
+      #                         shape = num_teams)
 
-** Constraints
-#+BEGIN_SRC ipython :session :exports both :results none
-  with model:
+      atts_star = pm.GaussianRandomWalk('atts_star',
+					tau = tau_att,
+					shape = num_teams)
+
+      defs_star = pm.GaussianRandomWalk('defs_star',
+					tau = tau_def,
+					shape = num_teams)
+
       atts       = pm.Deterministic('atts', atts_star - tt.mean(atts_star))
       defs       = pm.Deterministic('defs', defs_star - tt.mean(defs_star))
       home_theta = tt.exp(intercept + home + atts[df.i_home.values] + defs[df.i_away.values])
       away_theta = tt.exp(intercept + atts[df.i_away.values] + defs[df.i_home.values])
+
 #+END_SRC
 
 ** Update with observed data
@@ -221,7 +237,7 @@ dtype: int64
   with model:
       start = pm.find_MAP()
       step = pm.NUTS(state=start)
-      trace = pm.sample(20000,step,init=start)
+      trace = pm.sample(2000,step,init=start)
   pm.traceplot(trace)
 #+END_SRC
 
@@ -238,7 +254,6 @@ plt.hist(trace['tau_att'], histtype='stepfilled', bins=25, alpha=0.85)
 
 ** Confidence Intervals
 *** Attack strength
-[BUG: CLE does not have the best passing in the league]
 #+BEGIN_SRC ipython :session :file ./img/fig2.png :exports both
 pm.forestplot(trace, varnames=['atts'], ylabels=teams['team'], main="Team Passing Offense")
 #+END_SRC
@@ -375,5 +390,4 @@ simuls = simulate_seasons(1000)
 #+RESULTS:
 [[file:./img/fig5.png]]
 
-[BUG: These aren't right]
 #+RESULTS:
