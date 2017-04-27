@@ -34,97 +34,13 @@
 
 * The data
 ** nfldb
-Create data base with passing yards for the 2015 regular season with nfldb
+Load database with passing yards for the 2015 regular season with nfldb
+
 #+BEGIN_SRC ipython :session :results none
-  # selftart up nfldb
-  db = nfldb.connect()
-  q = nfldb.Query(db)
-
-  season_year = 2015
-  season_type = 'Regular'
-  # play id
-  q.game(season_year=season_year, season_type=season_type)
-  # plays = g.as_plays()
-
-  # initialize
-  home_team = []
-  away_team = []
-  gamekey   = []
-  home_yds = []
-  away_yds = []
-  week = []
-  num_games = 0
-
-  # loop through games
-  for i in range(1,18):
-      # find out who plays who
-      q = nfldb.Query(db).game(season_year=season_year,season_type=season_type,week=i)
-      for g in q.as_games():
-          home_team.append(g.home_team)
-          away_team.append(g.away_team)
-          gamekey.append(g.gamekey)
-          week.append(i)
-          num_games += 1
-
-  # cycle through each playplayer for yards
-  for i in range(0, num_games):
-      # home team yards
-      q = nfldb.Query(db).game(gamekey=gamekey[i],team=home_team[i])
-      q.play_player(team=home_team[i])
-      pps = q.as_aggregate()
-      home_yds.append(sum(pp.passing_yds for pp in pps))
-          
-      # away team yards
-      q = nfldb.Query(db).game(gamekey=gamekey[i],team=away_team[i])
-      q.play_player(team=away_team[i])
-      pps = q.as_aggregate()
-      away_yds.append(sum(pp.passing_yds for pp in pps))
-
-  # save to a new dataframe
-  df = pd.DataFrame({'home_team':home_team,
-                     'away_team':away_team,
-                     'home_yds':home_yds,
-                     'away_yds':away_yds,
-                     'week':week,
-                     'gamekey':gamekey})
-#+END_SRC
-
-** Munging
-Create a look-up table for team names
-#+BEGIN_SRC ipython :session :exports both
-  teams = df.home_team.unique()
-  teams = pd.DataFrame(teams, columns=['team'])
-  teams['i'] = teams.index
-  teams.head()
-  teams.to_csv('teams.csv')
-#+END_SRC
-
-#+RESULTS:
-
-Create away and home columns
-#+BEGIN_SRC ipython :session :exports both
-  df = pd.merge(df, teams, left_on='home_team', right_on='team', how='left')
-  df = df.rename(columns = {'i': 'i_home'}).drop('team', 1)
-  df = pd.merge(df, teams, left_on='away_team', right_on='team', how='left')
-  df = df.rename(columns = {'i': 'i_away'}).drop('team', 1)
+  df = pd.read_csv('out.csv', index_col=0)
   num_teams = len(df.i_home.drop_duplicates())
-  df.to_csv('out.csv')
-  df.head()
+  teams = pd.read_csv('teams.csv', index_col=0)
 #+END_SRC
-
-#+RESULTS:
-:   away_team  away_yds gamekey home_team  home_yds  week  i_home  i_away
-: 0       TEN       209   56515        TB       210     1       0      29
-: 1       BAL       117   56513       DEN       175     1       1      28
-: 2       DET       246   56512        SD       404     1       2      27
-: 3       IND       243   56504       BUF       195     1       3      20
-: 4        KC       243   56506       HOU       334     1       4      21
-
-# #+BEGIN_SRC ipython :session :results none
-#   df = pd.read_csv('out.csv', index_col=0)
-#   num_teams = len(df.i_home.drop_duplicates())
-#   teams = pd.read_csv('teams.csv', index_col=0)
-# #+END_SRC
 
 #+BEGIN_SRC ipython :session :exports both
   g = df.groupby('away_team')
@@ -183,9 +99,12 @@ dtype: int64
   def_starting_points = -np.log(g.away_yds.mean())
 #+END_SRC
 
+
 ** Priors
 #+BEGIN_SRC ipython :session :exports both :results none
-  with pm.Model() as model:
+  from pymc3.distributions.timeseries import GaussianRandomWalk
+  model = pm.Model()
+  with model:
       # global model parameters
       home       = pm.Normal('home',      0, tau=.0001)
       tau_att    = pm.Gamma('tau_att',   .1, .1)
@@ -193,15 +112,22 @@ dtype: int64
       intercept  = pm.Normal('intercept', 0, tau=.0001)
 
       #team-specific parameters
-      atts_star  = pm.Normal('atts_star',
-                             mu    = 0,
-                             tau   = tau_att,
-                             shape = num_teams)
-      defs_star  = pm.Normal('defs_star',
-                             mu    = 0,
-                             tau   = tau_def,
-                             shape = num_teams)
+      # atts_star  = pm.Normal('atts_star',
+      #                         mu    = 0,
+      #                         tau   = tau_att,
+      #                         shape = num_teams)
+      # defs_star  = pm.Normal('defs_star',
+      #                         mu    = 0,
+      #                         tau   = tau_def,
+      #                         shape = num_teams)
 
+      atts_star = pm.GaussianRandomWalk('atts_star',
+					tau = tau_att,
+					shape = num_teams)
+
+      defs_star = pm.GaussianRandomWalk('defs_star',
+					tau = tau_def,
+					shape = num_teams)
 
       atts       = pm.Deterministic('atts', atts_star - tt.mean(atts_star))
       defs       = pm.Deterministic('defs', defs_star - tt.mean(defs_star))
@@ -210,29 +136,24 @@ dtype: int64
 
 #+END_SRC
 
-#+BEGIN_SRC ipython :session :file  :exports both
-df.i_away.values
-#+END_SRC
-
-#+RESULTS:
-: 256
-
 ** Update with observed data
 #+BEGIN_SRC ipython :session  :exports both :results none
-  with model:
-      # likelihood of observed data
-      home_yds = pm.Poisson('home_yds',
-                            mu=home_theta,
-                            observed=df.home_yds.values)
+  import copy
+  m = copy.copy(model)
+  with m:
+	# likelihood of observed data
+	home_yds = pm.Poisson('home_yds',
+                              mu=home_theta,
+                              observed=df.home_yds.values)
 
-      away_yds = pm.Poisson('away_yds',
-                            mu=away_theta,
-                            observed=df.away_yds.values)
+	away_yds = pm.Poisson('away_yds',
+                              mu=away_theta,
+                              observed=df.away_yds.values)
 #+END_SRC
 
 ** Sample
 #+BEGIN_SRC ipython :session :file ./img/fig0.png :exports both
-  with model:
+  with m:
       start = pm.find_MAP()
       step = pm.NUTS(state=start)
       trace = pm.sample(2000,step,init=start)
