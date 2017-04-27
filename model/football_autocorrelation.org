@@ -30,24 +30,25 @@
 * Auto-correlation 
 ** for each team
 #+BEGIN_SRC ipython :session :file ./img/autoplot.png :exports both
-  # Initialize figure
-  fig, axes = plt.subplots(nrows=32, figsize=(8, 64))
-  fig.tight_layout()
+    # Initialize figure
+    fig, axes = plt.subplots(nrows=32, figsize=(8, 64))
+    fig.tight_layout()
 
-  for i in range(0,32):
-      # Identify matching games
-      home_match = df['home_team'] == teams['team'][i]
-      away_match = df['away_team'] == teams['team'][i]
-      
-      # Create data frame with matching data
-      g = df[home_match].home_yds
-      g = g.append(df[away_match].away_yds)
-      
-      # Sort by index
-      g.reset_index(drop=True,inplace=True)
+    for i in range(0,32):
+	# Identify matching games
+	home_match = df['home_team'] == teams['team'][i]
+	away_match = df['away_team'] == teams['team'][i]
 
-      # Plot 
-      autocorrelation_plot(g,ax=axes[i])
+	# Create data frame with matching data
+	g = df[home_match].home_yds
+	g = g.append(df[away_match].away_yds)
+
+	# Sort by index
+	g.sort_index(inplace=True)
+	g.reset_index(drop=True, inplace=True)
+
+	# Plot 
+	autocorrelation_plot(g,ax=axes[i])
 
 #+END_SRC
 
