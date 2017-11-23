@@ -30,7 +30,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-env_ff/
+*_env/
 build/
 develop-eggs/
 dist/
