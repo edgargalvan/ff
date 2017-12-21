@@ -13,7 +13,7 @@ csv = CSV.open("cbs_spread_2017.csv","wb",
               )
  
 
-weeks = *(1..15)
+weeks = *(1..16)
 
 weeks.each do |week|
   url = "https://www.cbssports.com/nfl/features/writers/expert/picks/against-the-spread/#{week}"
