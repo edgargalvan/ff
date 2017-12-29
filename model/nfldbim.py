@@ -42,13 +42,15 @@ def nfldbi(season_year, weeks):
     week = []
 
     # loop through games except the last week
+    '''
     if max(weeks) < 3:
         season_types = ['Preseason', 'Regular']
     else:
         season_types = ['Regular']
+    '''
 
-#    for season_type in ['Preseason', 'Regular']:
-    for season_type in season_types:
+    for season_type in ['Preseason', 'Regular']:
+#    for season_type in season_types:
         if season_type is 'Preseason':
             _weeks = range(0, 5)
         else:

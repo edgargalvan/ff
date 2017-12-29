@@ -6,6 +6,7 @@ import pymc3 as pm
 from scipy import optimize
 import matplotlib.pyplot as plt
 
+
 def spread(df, week, num_simulations):
 
     # pull week to simulate
