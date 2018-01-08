@@ -12,7 +12,7 @@ def nfldbim(season_year, weeks, teams=pd.DataFrame()):
 
     # munge data so that we can use it
     df = nfldbm(df, teams)
-    
+
     return df
 
 
@@ -50,7 +50,7 @@ def nfldbi(season_year, weeks):
     '''
 
     for season_type in ['Preseason', 'Regular']:
-#    for season_type in season_types:
+#    for season_type in ['Regular']:
         if season_type is 'Preseason':
             _weeks = range(0, 5)
         else:
