@@ -17,10 +17,10 @@ def spread(df, week, num_simulations):
     model = pm.Model()
     with pm.Model() as model:
         # global model parameters
-        home = pm.Normal('home',      0, tau=.0001)
-        tau_att = pm.Gamma('tau_att',   .1, .1)
-        tau_def = pm.Gamma('tau_def',   .1, .1)
-        intercept = pm.Normal('intercept', 0, tau=.0001)
+        home = pm.Normal('home',      0, tau=.01)
+        tau_att = pm.Gamma('tau_att',   10., 1.)
+        tau_def = pm.Gamma('tau_def',   10., 1.)
+        intercept = pm.Normal('intercept', 0, tau=.01)
 
         # team-specific parameters
         atts_star = pm.Normal('atts_star',
