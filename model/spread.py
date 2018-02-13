@@ -1,13 +1,13 @@
 import math
 import numpy as np
 import pandas as pd
-import theano.tensor as tt
+import theano.tensor as T
 import pymc3 as pm
 from scipy import optimize
 import matplotlib.pyplot as plt
 
 
-def spread(df, week, num_simulations):
+def spread(df, week, num_simulations, K=1):
 
     # pull week to simulate
     df_test = df[df['week'] == week]
@@ -17,36 +17,34 @@ def spread(df, week, num_simulations):
     model = pm.Model()
     with pm.Model() as model:
         # global model parameters
-        home = pm.Normal('home',      0, tau=.01)
-        tau_att = pm.Gamma('tau_att',   10., 1.)
-        tau_def = pm.Gamma('tau_def',   10., 1.)
-        intercept = pm.Normal('intercept', 0, tau=.01)
+        home = pm.Flat('home')
+        sd_att = pm.HalfStudentT('sd_att', nu=3., sd=2.5)
+        sd_def = pm.HalfStudentT('sd_def', nu=3., sd=2.5)
+        intercept = pm.Flat('intercept')
 
         # team-specific parameters
         atts_star = pm.Normal('atts_star',
                               mu=0,
-                              tau=tau_att,
+                              tau=sd_att,
                               shape=32)
         defs_star = pm.Normal('defs_star',
                               mu=0,
-                              tau=tau_def,
+                              tau=sd_def,
                               shape=32)
 
     # constraints
     with model:
-        atts = pm.Deterministic('atts', atts_star - tt.mean(atts_star))
-        defs = pm.Deterministic('defs', defs_star - tt.mean(defs_star))
-        home_theta = tt.exp(intercept + home + atts[df.i_home.values] +
-                            defs[df.i_away.values])
-        away_theta = tt.exp(intercept + atts[df.i_away.values] +
-                            defs[df.i_home.values])
+        atts = pm.Deterministic('atts', atts_star - T.mean(atts_star))
+        defs = pm.Deterministic('defs', defs_star - T.mean(defs_star))
+        home_theta = T.exp(intercept + home + atts[df.i_home]+defs[df.i_away])
+        away_theta = T.exp(intercept + atts[df.i_away]+defs[df.i_home])
 
     # update beleifs with observations
     metric = 'score'
     home_metric = 'home_'+metric
     away_metric = 'away_'+metric
 
-    K = 1  # TODO: let K be a function of the metric. 10yards, 1score
+    #K = 3  # TODO: let K be a function of the metric. 10yards, 1score
     with model:
         # likelihood of observed data
         home_score = pm.Poisson('home_score',
@@ -62,10 +60,9 @@ def spread(df, week, num_simulations):
         step = pm.NUTS()
         trace = pm.sample(20000, step, start=start)
 
-    fig, ax = plt.subplots(8,2, figsize=(10, 15))
+    fig, ax = plt.subplots(8, 2, figsize=(10, 15))
     pm.traceplot(trace, ax=ax)
     fig.savefig('traceplot_week_%s.png' % (week))
-
 
     # conduct simulation
     simuls = simulate_team_seasons(df_test, num_simulations, trace, metric, K)
@@ -86,21 +83,27 @@ def spread(df, week, num_simulations):
     season_hdis['x'] = season_hdis.index + .5
 
     # simulation spread
-    win_record = np.ndarray([num_simulations, len(df_test)])
-    spr_record = np.ndarray([num_simulations, len(df_test)])
+    home_record = np.ndarray([num_simulations, len(df_test)])
+    away_record = np.ndarray([num_simulations, len(df_test)])
+
     for i in range(0, num_simulations):
         home_scores = simuls[simuls.iteration == i].loc[
             df_test['home_team']]['score'].values
         away_scores = simuls[simuls.iteration == i].loc[
             df_test['away_team']]['score'].values
 
-        win_record[i] = home_scores > away_scores
-        spr_record[i] = away_scores - home_scores
+        home_record[i] = home_scores
+        away_record[i] = away_scores
 
-    spread = pd.DataFrame(spr_record)
-    spread.columns = df_test[df_test.week == week].home_team.values
-    spread['week'] = week
-    return spread
+    df_home = pd.DataFrame(home_record)
+    df_away = pd.DataFrame(away_record)
+
+    df_home.columns = df_test[df_test.week == week].home_team.values
+    df_away.columns = df_test[df_test.week == week].away_team.values
+
+    scores = pd.concat([df_home, df_away], axis=1)
+    scores['week'] = week
+    return scores
 
 
 def simulate_team_seasons(games, n, trace, metric, K):

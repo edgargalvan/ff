@@ -11,9 +11,7 @@ def nfldbim(season_year, weeks, teams=pd.DataFrame()):
     df = nfldbi(season_year, weeks)
 
     # munge data so that we can use it
-    df = nfldbm(df, teams)
-
-    return df
+    return nfldbm(df, teams)
 
 
 def nfldbi(season_year, weeks):
@@ -50,7 +48,6 @@ def nfldbi(season_year, weeks):
     '''
 
     for season_type in ['Preseason', 'Regular']:
-#    for season_type in ['Regular']:
         if season_type is 'Preseason':
             _weeks = range(0, 5)
         else:
@@ -116,14 +113,14 @@ def nfldbm(df, teams=pd.DataFrame()):
     """
     Munges nfldb data
     """
-    # Here is where we can "fix" team names, e.g.,
-    # df.loc[df.home_team == 'LAR', 'home_team'] = 'LA'
-    # df.loc[df.away_team == 'LAR', 'away_team'] = 'LA'
+    # get unique team ids
     if teams.empty:
         # Create a look-up table for team names
         teams = pd.concat([df.home_team, df.away_team]).unique()
         teams = pd.DataFrame(teams, columns=['team'])
         teams['i'] = teams.index
+        teams.sort_values(by=['team'], inplace=True)
+        teams.reset_index(inplace=True)
 
     # Create away and home columns
     df = pd.merge(df, teams, left_on='home_team', right_on='team', how='left')
@@ -131,4 +128,4 @@ def nfldbm(df, teams=pd.DataFrame()):
     df = pd.merge(df, teams, left_on='away_team', right_on='team', how='left')
     df = df.rename(columns={'i': 'i_away'}).drop('team', 1)
 
-    return df
+    return df, teams

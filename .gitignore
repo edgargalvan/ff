@@ -1,6 +1,9 @@
 ## testing
 scratch.ipynb
 
+## pickles
+*.pickle 
+
 ## OS X files
 .DS_Store
 .DS_store?
