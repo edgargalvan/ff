@@ -51,7 +51,7 @@ def bhm(df, metric='score', K=1, nu=3., sd=2.5):
     with model:
         start = pm.find_MAP(fmin=optimize.fmin_powell, maxeval=50000)
         step = pm.NUTS()
-        trace = pm.sample(1000, step=step, start=start)
+        trace = pm.sample(10000, step=step, start=start)
 
     #fig, ax = plt.subplots(8, 2, figsize=(10, 15))
     #pm.traceplot(trace, ax=ax)

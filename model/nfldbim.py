@@ -47,7 +47,8 @@ def nfldbi(season_year, weeks):
         season_types = ['Regular']
     '''
 
-    for season_type in ['Preseason', 'Regular']:
+    #for season_type in ['Preseason', 'Regular']:
+    for season_type in ['Regular']:
         if season_type is 'Preseason':
             _weeks = range(0, 5)
         else:
