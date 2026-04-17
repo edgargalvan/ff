@@ -1,4 +1,8 @@
 my-env
+
+## Local artifacts
+results/
+
 ## OS X files
 .DS_Store
 .DS_store?
