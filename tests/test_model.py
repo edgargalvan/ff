@@ -8,6 +8,7 @@ from src.data import load_game_data, munge_game_data
 from src.model import (
     bhm, simulate_team_season, simulate_team_seasons,
     create_team_season_table, predictions, plot_hdis,
+    ALL_COVARIATES,
 )
 
 
@@ -267,3 +268,109 @@ class TestPlotHDIs:
         assert fig is not None
         import matplotlib.pyplot as plt
         plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Synthetic data with covariates
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def synthetic_data_with_covariates():
+    """Synthetic game data with covariate columns."""
+    np.random.seed(42)
+    games = []
+    for week in range(1, 6):
+        for h, a in [(0, 1), (1, 2), (2, 3), (3, 0), (0, 2), (1, 3)]:
+            home_boost = 5 if h == 0 else (-3 if h == 3 else 0)
+            away_boost = 5 if a == 0 else (-3 if a == 3 else 0)
+            games.append({
+                "home_team": f"T{h}", "away_team": f"T{a}",
+                "home_score": max(0, np.random.poisson(22 + home_boost)),
+                "away_score": max(0, np.random.poisson(20 + away_boost)),
+                "i_home": h, "i_away": a, "week": week,
+                # Covariates
+                "rest_advantage": np.random.choice([-3, 0, 3, 4]),
+                "home_short_week": int(np.random.random() < 0.2),
+                "temp_std": np.random.normal(0, 1),
+                "wind_std": np.random.normal(0, 1),
+                "is_indoor": int(np.random.random() < 0.3),
+                "div_game": int(np.random.random() < 0.35),
+            })
+    return pd.DataFrame(games)
+
+
+# ---------------------------------------------------------------------------
+# Covariate model tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def fitted_model_covariates(synthetic_data_with_covariates):
+    """Fit model with covariates once."""
+    covs = ["rest_advantage", "home_short_week", "temp_std"]
+    return bhm(synthetic_data_with_covariates, metric="score", samples=100,
+               covariates=covs), covs
+
+
+class TestCovariates:
+    def test_model_fits_with_covariates(self, fitted_model_covariates):
+        idata, _ = fitted_model_covariates
+        assert idata is not None
+
+    def test_beta_coefficients_in_posterior(self, fitted_model_covariates):
+        idata, covs = fitted_model_covariates
+        for cov in covs:
+            assert f"beta_{cov}" in idata.posterior, f"Missing beta_{cov}"
+
+    def test_simulation_with_covariates(self, synthetic_data_with_covariates,
+                                         fitted_model_covariates):
+        idata, covs = fitted_model_covariates
+        sim = simulate_team_season(synthetic_data_with_covariates, idata,
+                                   metric="score", burnin=0, covariates=covs)
+        assert (sim["home_score"] >= 0).all()
+        assert (sim["away_score"] >= 0).all()
+
+    def test_still_has_team_params(self, fitted_model_covariates):
+        idata, _ = fitted_model_covariates
+        assert "atts" in idata.posterior
+        assert "defs" in idata.posterior
+
+
+# ---------------------------------------------------------------------------
+# Time-varying model tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def fitted_model_time_varying(synthetic_data_with_covariates):
+    """Fit model with time-varying params once."""
+    return bhm(synthetic_data_with_covariates, metric="score", samples=100,
+               time_varying=True)
+
+
+class TestTimeVarying:
+    def test_model_fits(self, fitted_model_time_varying):
+        assert fitted_model_time_varying is not None
+
+    def test_walk_in_posterior(self, fitted_model_time_varying):
+        post = fitted_model_time_varying.posterior
+        assert "atts_walk" in post
+        assert "defs_walk" in post
+
+    def test_atts_shape_is_weeks_by_teams(self, fitted_model_time_varying):
+        atts = fitted_model_time_varying.posterior["atts"]
+        # shape should be (chains, draws, n_weeks, n_teams)
+        assert len(atts.shape) == 4
+        assert atts.shape[-1] == 4   # 4 teams
+        assert atts.shape[-2] == 5   # 5 weeks
+
+    def test_innovation_scale_positive(self, fitted_model_time_varying):
+        post = fitted_model_time_varying.posterior
+        assert (post["sd_att_innov"].values > 0).all()
+        assert (post["sd_def_innov"].values > 0).all()
+
+    def test_simulation_works(self, synthetic_data_with_covariates,
+                               fitted_model_time_varying):
+        sim = simulate_team_season(synthetic_data_with_covariates,
+                                   fitted_model_time_varying,
+                                   metric="score", burnin=0)
+        assert (sim["home_score"] >= 0).all()
+        assert len(sim) == len(synthetic_data_with_covariates)

@@ -5,13 +5,13 @@ Uses a Negative Binomial log-linear model with non-centered parameterization
 to estimate per-team attack and defense strengths, then simulates game
 outcomes by drawing from the posterior.
 
-Model:
-    home_score ~ NegBin(mu=exp(intercept + home + atts[home] + defs[away]), alpha)
-    away_score ~ NegBin(mu=exp(intercept + atts[away] + defs[home]), alpha)
+Base model:
+    home_score ~ NegBin(mu=exp(intercept + home + atts[home] + defs[away] + X*beta), alpha)
+    away_score ~ NegBin(mu=exp(intercept + atts[away] + defs[home] + X*beta), alpha)
 
-    atts_raw ~ Normal(0, 1)          # non-centered
-    atts = sd_att * atts_raw          # rescaled
-    atts_centered = atts - mean(atts) # sum-to-zero
+Options:
+    time_varying=True:  atts/defs evolve per-week via GaussianRandomWalk
+    covariates=[...]:   add game-level predictors (rest, weather, etc.)
 """
 
 import numpy as np
@@ -21,18 +21,31 @@ import pytensor.tensor as pt
 import arviz as az
 import matplotlib.pyplot as plt
 
+# Covariates that affect both teams symmetrically (added to both home and away theta)
+SYMMETRIC_COVARIATES = ["temp_std", "wind_std", "is_indoor", "div_game"]
 
-def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000):
+# Covariates that only affect the home team's rate
+HOME_COVARIATES = ["rest_advantage", "home_short_week"]
+
+# All available covariates
+ALL_COVARIATES = SYMMETRIC_COVARIATES + HOME_COVARIATES
+
+
+def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000,
+        time_varying=False, covariates=None):
     """
     Fit a hierarchical Bayesian model to game data.
 
     Args:
-        df: DataFrame with columns: i_home, i_away, home_{metric}, away_{metric}
+        df: DataFrame with columns: i_home, i_away, week, home_{metric}, away_{metric}
         metric: which stat to model ('score', 'passing_yds', etc.)
         K: divisor for the metric (e.g. K=7 to model in units of touchdowns)
         nu: degrees of freedom for HalfStudentT priors
         sigma: scale for HalfStudentT priors
         samples: number of MCMC samples to draw
+        time_varying: if True, team strengths evolve week-to-week via GaussianRandomWalk
+        covariates: list of covariate column names to include, or None for no covariates.
+                    Use ALL_COVARIATES for all available.
 
     Returns:
         ArviZ InferenceData object
@@ -48,27 +61,26 @@ def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000):
         sd_att = pm.HalfStudentT("sd_att", nu=nu, sigma=sigma)
         sd_def = pm.HalfStudentT("sd_def", nu=nu, sigma=sigma)
 
-        # Team-specific parameters (non-centered parameterization)
-        # This avoids the funnel geometry that makes NUTS inefficient
-        # when group-level variance is small relative to data
-        atts_raw = pm.Normal("atts_raw", mu=0, sigma=1, shape=n_teams)
-        defs_raw = pm.Normal("defs_raw", mu=0, sigma=1, shape=n_teams)
-        atts_star = pm.Deterministic("atts_star", sd_att * atts_raw)
-        defs_star = pm.Deterministic("defs_star", sd_def * defs_raw)
-
-        # Sum-to-zero constraint
-        atts = pm.Deterministic("atts", atts_star - pt.mean(atts_star))
-        defs = pm.Deterministic("defs", defs_star - pt.mean(defs_star))
+        if time_varying:
+            atts, defs = _build_time_varying_params(df, n_teams, sd_att, sd_def)
+        else:
+            atts, defs = _build_static_params(n_teams, sd_att, sd_def)
 
         # Log-linear model for scoring rates
-        home_theta = pt.exp(intercept + home + atts[df["i_home"].values] + defs[df["i_away"].values])
-        away_theta = pt.exp(intercept + atts[df["i_away"].values] + defs[df["i_home"].values])
+        log_home = intercept + home + atts[df["i_home"].values] + defs[df["i_away"].values]
+        log_away = intercept + atts[df["i_away"].values] + defs[df["i_home"].values]
+
+        # Add covariates
+        if covariates:
+            log_home, log_away = _add_covariates(df, covariates, log_home, log_away)
+
+        home_theta = pt.exp(log_home)
+        away_theta = pt.exp(log_away)
 
         # Overdispersion parameter for Negative Binomial
-        # Higher alpha = less overdispersion (approaches Poisson as alpha -> inf)
         alpha = pm.Exponential("alpha", lam=1.0)
 
-        # Negative Binomial likelihood (handles overdispersion in NFL scores)
+        # Negative Binomial likelihood
         pm.NegativeBinomial("home_obs", mu=home_theta, alpha=alpha,
                             observed=df[home_metric].values / K)
         pm.NegativeBinomial("away_obs", mu=away_theta, alpha=alpha,
@@ -79,16 +91,122 @@ def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000):
     return idata
 
 
-def simulate_team_season(df, idata, metric="score", K=1, burnin=100):
+def _build_static_params(n_teams, sd_att, sd_def):
+    """Non-centered static team parameters."""
+    atts_raw = pm.Normal("atts_raw", mu=0, sigma=1, shape=n_teams)
+    defs_raw = pm.Normal("defs_raw", mu=0, sigma=1, shape=n_teams)
+    atts_star = pm.Deterministic("atts_star", sd_att * atts_raw)
+    defs_star = pm.Deterministic("defs_star", sd_def * defs_raw)
+
+    atts = pm.Deterministic("atts", atts_star - pt.mean(atts_star))
+    defs = pm.Deterministic("defs", defs_star - pt.mean(defs_star))
+    return atts, defs
+
+
+def _build_time_varying_params(df, n_teams, sd_att, sd_def):
+    """
+    Time-varying team parameters via GaussianRandomWalk.
+
+    Each team's attack and defense strength evolves week-to-week.
+    The model indexes into the appropriate week for each game.
+    """
+    weeks = sorted(df["week"].unique())
+    n_weeks = len(weeks)
+    week_to_idx = {w: i for i, w in enumerate(weeks)}
+    week_indices = df["week"].map(week_to_idx).values
+
+    # Innovation scale (how much strength can change per week)
+    sd_att_innov = pm.HalfNormal("sd_att_innov", sigma=0.1)
+    sd_def_innov = pm.HalfNormal("sd_def_innov", sigma=0.1)
+
+    # GaussianRandomWalk: shape (n_weeks, n_teams)
+    # Each team gets an independent random walk over weeks
+    atts_walk = pm.GaussianRandomWalk(
+        "atts_walk", sigma=sd_att_innov, init_dist=pm.Normal.dist(0, sd_att),
+        shape=(n_weeks, n_teams),
+    )
+    defs_walk = pm.GaussianRandomWalk(
+        "defs_walk", sigma=sd_def_innov, init_dist=pm.Normal.dist(0, sd_def),
+        shape=(n_weeks, n_teams),
+    )
+
+    # Sum-to-zero constraint per week
+    atts_centered = pm.Deterministic(
+        "atts", atts_walk - pt.mean(atts_walk, axis=1, keepdims=True)
+    )
+    defs_centered = pm.Deterministic(
+        "defs", defs_walk - pt.mean(defs_walk, axis=1, keepdims=True)
+    )
+
+    # Index into the right week for each game
+    atts = atts_centered[week_indices, :]
+    defs = defs_centered[week_indices, :]
+
+    # For each game, select the home/away team's strength at that week
+    game_indices = np.arange(len(df))
+    atts_home = atts[game_indices, df["i_home"].values]
+    atts_away = atts[game_indices, df["i_away"].values]
+    defs_home = defs[game_indices, df["i_home"].values]
+    defs_away = defs[game_indices, df["i_away"].values]
+
+    # Return as indexable-like objects (just the game-level values)
+    # We wrap in a container so the caller can use atts[df["i_home"].values] syntax
+    return _GameIndexed(atts_home, atts_away), _GameIndexed(defs_home, defs_away)
+
+
+class _GameIndexed:
+    """Helper to let time-varying params be indexed like static ones."""
+    def __init__(self, home_vals, away_vals):
+        self._home = home_vals
+        self._away = away_vals
+        self._is_home_call = True
+
+    def __getitem__(self, idx):
+        # First call is home, second is away (matches the bhm() call pattern)
+        if self._is_home_call:
+            self._is_home_call = False
+            return self._home
+        else:
+            self._is_home_call = True
+            return self._away
+
+
+def _add_covariates(df, covariates, log_home, log_away):
+    """Add covariate effects to log-linear predictors."""
+    for cov in covariates:
+        if cov not in df.columns:
+            continue
+
+        values = df[cov].values.astype(float)
+        # Check for NaN
+        if np.any(np.isnan(values)):
+            values = np.nan_to_num(values, nan=0.0)
+
+        beta = pm.Normal(f"beta_{cov}", mu=0, sigma=1)
+
+        if cov in HOME_COVARIATES:
+            # Only affects home team rate
+            log_home = log_home + beta * values
+        else:
+            # Affects both teams (environmental factor)
+            log_home = log_home + beta * values
+            log_away = log_away + beta * values
+
+    return log_home, log_away
+
+
+def simulate_team_season(df, idata, metric="score", K=1, burnin=100,
+                         covariates=None):
     """
     Simulate one season using a random draw from the posterior.
 
     Args:
-        df: DataFrame with game matchups (i_home, i_away)
+        df: DataFrame with game matchups (i_home, i_away, and covariate columns)
         idata: ArviZ InferenceData from bhm()
         metric: stat being modeled
         K: divisor used during fitting
         burnin: minimum sample index to draw from
+        covariates: list of covariates used during fitting (must match)
 
     Returns:
         DataFrame with simulated home/away scores
@@ -100,27 +218,58 @@ def simulate_team_season(df, idata, metric="score", K=1, burnin=100):
     n_chains = posterior.sizes["chain"]
     n_draws = posterior.sizes["draw"]
 
-    # Random draw from posterior (skip burnin)
     chain = np.random.randint(0, n_chains)
     draw = np.random.randint(burnin, n_draws)
 
-    atts = posterior["atts"].values[chain, draw, :]
-    defs = posterior["defs"].values[chain, draw, :]
+    # Check if model used time-varying params
+    is_time_varying = "atts_walk" in posterior
+
+    if is_time_varying:
+        # atts has shape (n_weeks, n_teams) — use last week's values for prediction
+        atts_all = posterior["atts"].values[chain, draw, :, :]  # (n_weeks, n_teams)
+        defs_all = posterior["defs"].values[chain, draw, :, :]
+        # Use last available week's strength estimates
+        atts = atts_all[-1, :]
+        defs = defs_all[-1, :]
+    else:
+        atts = posterior["atts"].values[chain, draw, :]
+        defs = posterior["defs"].values[chain, draw, :]
+
     home_adv = float(posterior["home"].values[chain, draw])
     intercept = float(posterior["intercept"].values[chain, draw])
     alpha = float(posterior["alpha"].values[chain, draw])
 
     season = df.copy()
 
-    # Compute scoring rates
-    home_theta = np.exp(intercept + home_adv + atts[season["i_home"].values] + defs[season["i_away"].values])
-    away_theta = np.exp(intercept + atts[season["i_away"].values] + defs[season["i_home"].values])
+    # Compute log-linear rates
+    log_home = intercept + home_adv + atts[season["i_home"].values] + defs[season["i_away"].values]
+    log_away = intercept + atts[season["i_away"].values] + defs[season["i_home"].values]
 
-    # Simulate scores via Negative Binomial
-    # numpy parameterizes NB as (n, p) where n=alpha, p=alpha/(alpha+mu)
-    def nb_draw(mu, alpha):
-        p = alpha / (alpha + mu)
-        return K * np.random.negative_binomial(alpha, p)
+    # Add covariate effects
+    if covariates:
+        for cov in covariates:
+            if cov not in season.columns:
+                continue
+            beta_key = f"beta_{cov}"
+            if beta_key not in posterior:
+                continue
+            beta = float(posterior[beta_key].values[chain, draw])
+            values = season[cov].values.astype(float)
+            values = np.nan_to_num(values, nan=0.0)
+
+            if cov in HOME_COVARIATES:
+                log_home = log_home + beta * values
+            else:
+                log_home = log_home + beta * values
+                log_away = log_away + beta * values
+
+    home_theta = np.exp(log_home)
+    away_theta = np.exp(log_away)
+
+    # Simulate via Negative Binomial
+    def nb_draw(mu, a):
+        p = a / (a + mu)
+        return K * np.random.negative_binomial(a, p)
 
     season[home_metric] = nb_draw(home_theta, alpha)
     season[away_metric] = nb_draw(away_theta, alpha)
@@ -128,7 +277,8 @@ def simulate_team_season(df, idata, metric="score", K=1, burnin=100):
     return season
 
 
-def simulate_team_seasons(df, idata, nsims=1000, metric="score", K=1, burnin=100):
+def simulate_team_seasons(df, idata, nsims=1000, metric="score", K=1, burnin=100,
+                          covariates=None):
     """
     Run multiple season simulations and aggregate results by team.
 
@@ -137,7 +287,8 @@ def simulate_team_seasons(df, idata, nsims=1000, metric="score", K=1, burnin=100
     """
     dfs = []
     for i in range(nsims):
-        season = simulate_team_season(df, idata, metric=metric, K=K, burnin=burnin)
+        season = simulate_team_season(df, idata, metric=metric, K=K,
+                                      burnin=burnin, covariates=covariates)
         table = create_team_season_table(season, metric)
         table["iteration"] = i
         dfs.append(table)
@@ -161,13 +312,6 @@ def create_team_season_table(season, metric="score"):
 def predictions(df, simuls, teams, nsims=1000, metric="score"):
     """
     Generate prediction intervals from simulations.
-
-    Args:
-        df: DataFrame of actual game results
-        simuls: DataFrame from simulate_team_seasons()
-        teams: team mapping DataFrame
-        nsims: number of simulations that were run
-        metric: stat being modeled
 
     Returns:
         hdis DataFrame with median, 10th/90th percentile, and actuals per team
