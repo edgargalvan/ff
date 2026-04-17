@@ -16,7 +16,21 @@ Key features:
 - **Non-centered parameterization** for efficient NUTS sampling with 32 teams
 - **Time-varying team strengths** (optional) via GaussianRandomWalk
 - **Game covariates** (optional): rest days, weather, indoor/outdoor, divisional rivalry
-- **DFS lineup optimizer** using integer linear programming (PuLP)
+- **Rolling backtest** to validate predictions against actual outcomes
+
+## Results
+
+Rolling backtest on the 2024 NFL season (train on 8-week windows, predict next week):
+
+| Metric | Value |
+|---|---|
+| Games predicted | 64 (weeks 15-18) |
+| Winner accuracy | **68.8%** |
+| Accuracy (confidence >= 60%) | **87.9%** (33 games) |
+| Spread MAE | 11.2 points |
+| Brier score | 0.205 (coin flip = 0.250) |
+
+The model is well-calibrated: when it's more confident, it's more accurate. Games predicted with >= 60% confidence are correct ~88% of the time.
 
 ## Setup
 
@@ -28,55 +42,59 @@ pip install -e ".[dev]"
 
 ## Usage
 
-### Fit the model
+### Fit and predict
 
 ```python
 from src.data import load_game_data
-from src.model import bhm, simulate_team_seasons, predictions
+from src.model import bhm
+from src.backtest import predict_week
 
-# Load 2024 regular season data (with covariates)
 df, teams = load_game_data(2024, weeks=list(range(1, 15)))
-
-# Fit base model
 idata = bhm(df, metric="score", samples=1000)
 
-# Or with covariates and time-varying strengths
-idata = bhm(df, metric="score", samples=1000,
-            time_varying=True,
-            covariates=["rest_advantage", "temp_std", "wind_std"])
+df_test, _ = load_game_data(2024, weeks=[15])
+preds = predict_week(idata, df_test, nsims=500)
 ```
 
-### Simulate and predict
+### Run a backtest
 
 ```python
-# Simulate test weeks
-df_test, _ = load_game_data(2024, weeks=list(range(15, 19)))
-simuls = simulate_team_seasons(df_test, idata, nsims=1000)
-hdis = predictions(df_test, simuls, teams, nsims=1000)
+from src.backtest import backtest, print_summary
+
+results = backtest(2024, train_window=8, nsims=500, samples=500)
+print_summary(results)
 ```
 
-### Fantasy scoring
+### Compare model variants
 
 ```python
-from src.stats import player_season_fantasy_points
+from src.compare import compare_models, print_comparison
 
-weekly = player_season_fantasy_points("Josh Allen", 2024)
+configs = [
+    {"name": "base", "time_varying": False, "covariates": None},
+    {"name": "+covariates", "covariates": ["rest_advantage", "temp_std"]},
+    {"name": "+time_varying", "time_varying": True},
+]
+comparison = compare_models(2024, configs)
+print_comparison(comparison)
 ```
 
 ## Project Structure
 
 ```
 src/
-  config.py                  Fantasy scoring rules
-  data.py                    NFL game data loading (nflreadpy)
   model.py                   Hierarchical Bayesian model (PyMC)
+  data.py                    NFL game data loading (nflreadpy)
+  backtest.py                Rolling backtest engine
+  compare.py                 Model variant comparison
+  config.py                  Fantasy scoring rules
   stats.py                   Player/team stats, fantasy point calculations
   analysis.py                Opponent-strength analysis
   optimizers/
     lineup_optimizer.py      DFS lineup optimizer (PuLP/CBC)
 notebooks/
-  football.ipynb             Model fitting, simulation, spread prediction
-tests/                       121 tests
+  football.ipynb             Model fitting, simulation, backtest
+tests/                       131 tests
 ```
 
 ## Tests
