@@ -1,10 +1,13 @@
-"""
-DFS lineup optimizer using integer linear programming.
-Replaces the MATLAB/CPLEX naive_picker.m with Python/PuLP.
-"""
+"""DFS lineup optimizer using integer linear programming."""
+
+from __future__ import annotations
+
+import logging
 
 import pulp
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 
 # Default constraints
@@ -22,13 +25,13 @@ DEFAULT_MAX_PER_TEAM = 4
 
 
 def optimize_lineup(
-    players,
-    salary_cap=DEFAULT_SALARY_CAP,
-    roster_size=DEFAULT_ROSTER_SIZE,
-    position_limits=None,
-    max_per_team=DEFAULT_MAX_PER_TEAM,
-    exclude=None,
-):
+    players: pl.DataFrame,
+    salary_cap: int = DEFAULT_SALARY_CAP,
+    roster_size: int = DEFAULT_ROSTER_SIZE,
+    position_limits: dict[str, int] | None = None,
+    max_per_team: int = DEFAULT_MAX_PER_TEAM,
+    exclude: list[str] | None = None,
+) -> pl.DataFrame | None:
     """
     Find the optimal DFS lineup using integer linear programming.
 
@@ -101,7 +104,7 @@ def optimize_lineup(
     prob.solve(solver)
 
     if prob.status != pulp.constants.LpStatusOptimal:
-        print("No optimal solution found.")
+        logger.warning("No optimal solution found (status=%s)", prob.status)
         return None
 
     # Extract selected players
@@ -120,7 +123,8 @@ def optimize_lineup(
     return result
 
 
-def find_multiple_lineups(players, num_lineups=5, **kwargs):
+def find_multiple_lineups(players: pl.DataFrame, num_lineups: int = 5,
+                          **kwargs) -> list[pl.DataFrame]:
     """
     Generate multiple distinct optimal lineups by excluding previous solutions.
 

@@ -3,12 +3,15 @@ NFL game data loading via nflreadpy.
 Replaces the old nfldbim.py module that used nfldb.
 """
 
+from __future__ import annotations
+
 import nflreadpy as nfl
 import pandas as pd
 import numpy as np
 
 
-def load_game_data(season_year, weeks=None):
+def load_game_data(season_year: int,
+                   weeks: list[int] | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Load NFL game data for a season and return a DataFrame ready for modeling.
 
@@ -96,7 +99,8 @@ def _add_covariates(df):
             df["wind_std"] = 0.0
 
 
-def munge_game_data(df, teams=None):
+def munge_game_data(df: pd.DataFrame,
+                    teams: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Add team integer indices to game data.
 

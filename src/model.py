@@ -14,12 +14,16 @@ Options:
     covariates=[...]:   add game-level predictors (rest, weather, etc.)
 """
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import pymc as pm
 import pytensor.tensor as pt
 import arviz as az
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
 
 # Covariates that affect both teams symmetrically (added to both home and away theta)
 SYMMETRIC_COVARIATES = ["temp_std", "wind_std", "is_indoor", "div_game"]
@@ -31,8 +35,10 @@ HOME_COVARIATES = ["rest_advantage", "home_short_week"]
 ALL_COVARIATES = SYMMETRIC_COVARIATES + HOME_COVARIATES
 
 
-def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000,
-        time_varying=False, covariates=None):
+def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
+        nu: float = 3.0, sigma: float = 2.5, samples: int = 1000,
+        time_varying: bool = False,
+        covariates: list[str] | None = None) -> az.InferenceData:
     """
     Fit a hierarchical Bayesian model to game data.
 
@@ -195,8 +201,9 @@ def _add_covariates(df, covariates, log_home, log_away):
     return log_home, log_away
 
 
-def simulate_team_season(df, idata, metric="score", K=1, burnin=100,
-                         covariates=None):
+def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
+                         metric: str = "score", K: int = 1, burnin: int = 100,
+                         covariates: list[str] | None = None) -> pd.DataFrame:
     """
     Simulate one season using a random draw from the posterior.
 
@@ -277,8 +284,10 @@ def simulate_team_season(df, idata, metric="score", K=1, burnin=100,
     return season
 
 
-def simulate_team_seasons(df, idata, nsims=1000, metric="score", K=1, burnin=100,
-                          covariates=None):
+def simulate_team_seasons(df: pd.DataFrame, idata: az.InferenceData,
+                          nsims: int = 1000, metric: str = "score",
+                          K: int = 1, burnin: int = 100,
+                          covariates: list[str] | None = None) -> pd.DataFrame:
     """
     Run multiple season simulations and aggregate results by team.
 
@@ -295,7 +304,7 @@ def simulate_team_seasons(df, idata, nsims=1000, metric="score", K=1, burnin=100
     return pd.concat(dfs, ignore_index=True)
 
 
-def create_team_season_table(season, metric="score"):
+def create_team_season_table(season: pd.DataFrame, metric: str = "score") -> pd.DataFrame:
     """Aggregate simulated game results into per-team totals."""
     home_metric = f"home_{metric}"
     away_metric = f"away_{metric}"
@@ -309,7 +318,8 @@ def create_team_season_table(season, metric="score"):
     return pd.concat([home, away], axis=0, ignore_index=True)
 
 
-def predictions(df, simuls, teams, nsims=1000, metric="score"):
+def predictions(df: pd.DataFrame, simuls: pd.DataFrame, teams: pd.DataFrame,
+                nsims: int = 1000, metric: str = "score") -> pd.DataFrame:
     """
     Generate prediction intervals from simulations.
 
@@ -336,7 +346,7 @@ def predictions(df, simuls, teams, nsims=1000, metric="score"):
     return hdis
 
 
-def plot_hdis(hdis, metric="score"):
+def plot_hdis(hdis: pd.DataFrame, metric: str = "score") -> tuple[Figure, Axes]:
     """Plot actual values vs simulated 90% credible intervals by team."""
     fig, ax = plt.subplots(figsize=(12, 6))
 

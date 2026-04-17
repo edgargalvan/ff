@@ -1,5 +1,8 @@
-# Scoring scheme for fantasy football
-# Keys match nflreadpy column names where possible
+"""Fantasy football scoring configuration.
+
+Defines point values per stat and defense points-against tiers.
+Keys match nflreadpy column names where possible.
+"""
 
 scoring = {
     # Offensive stats
