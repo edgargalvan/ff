@@ -1,8 +1,8 @@
 """Unit tests for scoring logic — no network calls needed."""
 
 import pytest
-from config import scoring, defense_pa_tiers
-from stats import calc_fantasy_points, score_defense_pa, player_season_fantasy_points
+from src.config import scoring, defense_pa_tiers
+from src.stats import calc_fantasy_points, score_defense_pa, player_season_fantasy_points
 
 
 class TestCalcFantasyPoints:

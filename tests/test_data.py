@@ -7,7 +7,7 @@ specific stat values (which change as data is updated).
 
 import pytest
 import polars as pl
-from stats import (
+from src.stats import (
     get_player_weekly_stats,
     get_defense_pa_stats,
     get_defense_stats,
@@ -15,7 +15,7 @@ from stats import (
     calc_fantasy_points,
     score_defense_pa,
 )
-from config import scoring
+from src.config import scoring
 
 SEASON = 2024
 

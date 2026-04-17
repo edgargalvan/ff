@@ -2,7 +2,7 @@
 
 import pytest
 import polars as pl
-from optimizers.lineup_optimizer import (
+from src.optimizers.lineup_optimizer import (
     optimize_lineup,
     find_multiple_lineups,
     DEFAULT_SALARY_CAP,

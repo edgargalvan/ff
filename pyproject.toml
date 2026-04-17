@@ -1,7 +1,7 @@
 [project]
 name = "ff"
-version = "0.2.0"
-description = "Fantasy football stats, scoring, and DFS lineup optimization"
+version = "0.3.0"
+description = "NFL game prediction via hierarchical Bayesian modeling, with fantasy scoring and DFS optimization"
 requires-python = ">=3.10"
 dependencies = [
     "nflreadpy",
@@ -9,11 +9,16 @@ dependencies = [
     "matplotlib",
     "pulp",
     "polars",
+    "pymc",
+    "arviz",
+    "pandas",
+    "pyarrow",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "jupyter",
 ]
 
 [tool.pytest.ini_options]

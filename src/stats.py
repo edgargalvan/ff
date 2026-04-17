@@ -1,7 +1,7 @@
 import nflreadpy as nfl
 import polars as pl
 import numpy as np
-from config import scoring, defense_pa_tiers
+from src.config import scoring, defense_pa_tiers
 
 
 def get_player_weekly_stats(player_name, season_year):
