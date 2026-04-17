@@ -1,0 +1,20 @@
+[project]
+name = "ff"
+version = "0.2.0"
+description = "Fantasy football stats, scoring, and DFS lineup optimization"
+requires-python = ">=3.10"
+dependencies = [
+    "nflreadpy",
+    "numpy",
+    "matplotlib",
+    "pulp",
+    "polars",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

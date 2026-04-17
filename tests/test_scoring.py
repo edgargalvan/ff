@@ -2,7 +2,7 @@
 
 import pytest
 from config import scoring, defense_pa_tiers
-from test_pts import calc_fantasy_points, score_defense_pa, player_season_fantasy_points
+from stats import calc_fantasy_points, score_defense_pa, player_season_fantasy_points
 
 
 class TestCalcFantasyPoints:

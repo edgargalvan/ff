@@ -1,4 +1,0 @@
-nflreadpy
-numpy
-matplotlib
-pulp

@@ -5,7 +5,7 @@ Includes unit tests with mock data and integration tests against nflreadpy.
 
 import pytest
 import polars as pl
-from test_avg_passing import find_opponent, get_team_passing_yards, passing_vs_opponent_strength
+from analysis import find_opponent, get_team_passing_yards, passing_vs_opponent_strength
 import nflreadpy as nfl
 
 

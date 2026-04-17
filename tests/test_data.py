@@ -7,7 +7,7 @@ specific stat values (which change as data is updated).
 
 import pytest
 import polars as pl
-from test_pts import (
+from stats import (
     get_player_weekly_stats,
     get_defense_pa_stats,
     get_defense_stats,
