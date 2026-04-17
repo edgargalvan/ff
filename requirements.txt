@@ -1,1 +1,4 @@
-nfldb
+nflreadpy
+numpy
+matplotlib
+pulp

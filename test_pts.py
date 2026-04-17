@@ -1,157 +1,119 @@
-
-import nfldb
+import nflreadpy as nfl
+import polars as pl
 import numpy as np
-from config import *
+from config import scoring, defense_pa_tiers
 
-class ff_stats:
-    def __init__(self,name,team,season_type,season_year):
-        # start up db
-        db = nfldb.connect()
-        q = nfldb.Query(db)
 
-        # player info
-        self.full_name = ''
-        self.position = ''
-        self.team_name = ''
-        self.player_id = ''
-            
-        # stats we wish to track for ff
-        self.passing_yds = []
-        self.passing_tds = []
-        self.rushing_yds = []
-        self.rushing_tds = []
-        self.receiving_yds = []
-        self.receiving_tds = []
-        self.kickret_tds = []
-        self.puntret_tds = []
-        self.passing_twoptm = []
-        self.rushing_twoptm = []
-        self.receiving_twoptm = []
-        self.fumbles_lost = []
-        self.fumbles_rec_tds = []
-        self.kicking_xpmade = []
+def get_player_weekly_stats(player_name, season_year):
+    """Get weekly fantasy-relevant stats for an offensive player."""
+    stats = nfl.load_player_stats(seasons=[season_year], summary_level="week")
+    player = stats.filter(pl.col("player_display_name") == player_name)
 
-        # kicker
-        self.kicking_fgm_0_39 = []
-        self.kicking_fgm_40_49 = []
-        self.kicking_fgm_50_100 = []
+    if player.is_empty():
+        raise ValueError(f"Player '{player_name}' not found in {season_year} data")
 
-        # defense
-        self.defense_sk = []
-        self.defense_int = []
-        self.defense_frec = []
-        self.defense_int_tds = []
-        self.defense_misc_tds = []
-        self.defense_safe = []
-        self.defense_fgblk = []
+    return player
 
-        # defense points against (not sure how to handle this just yet)
-        self.defense_pa_35_100 = []
-        self.defense_pa_28_34 = []
-        self.defense_pa_21_27 = []
-        self.defense_pa_14_20 = []
-        self.defense_pa_7_13 = []
-        self.defense_pa_1_6 = []
-        self.defense_pa_0_0 = []
-        
-        # games we're interested in
-        games = q.game(season_year=season_year, season_type=season_type, team=team)
-        
-        # find the player and games we care about
-        if name=='DEF':
-            self.full_name = 'DEF'
-            self.position = 'DEF'
-            self.team = team
-    
-            #subset of games played by team
-            player_games = games.play_player(team=team)
-        else:
-            dummy, _ = nfldb.player_search(db, name, team=team)
-            # subset of games played by player
-            player_games = games.player(player_id=dummy.player_id)
 
-            for attr, value in self.__dict__.iteritems():
-                if hasattr(dummy, attr):
-                    setattr(self, attr, getattr(dummy,attr)) 
 
-        for gg in player_games.as_games():
-            # add game statistics
-            self.update_game(gg)
-            for pp in gg.play_players:
-                # add play statistics
-                if self.full_name=='DEF':
-                    if pp.team==team:
-                        self.update_play(pp)
-                else:
-                    if pp.player_id==self.player_id:
-                        self.update_play(pp)
-    
-    # update with nfldb play statistics
-    def update_play(self,obj):
-        # update matching statistics
-        for attr, value in self.__dict__.iteritems():
-            if isinstance(getattr(self,attr), list):
-                if hasattr(obj, attr):
-                    getattr(self,attr)[-1] += getattr(obj,attr)
+def get_defense_pa_stats(team, season_year):
+    """Get defense points-against stats per week for a team."""
+    schedule = nfl.load_schedules(seasons=[season_year])
 
-        # update kicking stats
-        if hasattr(obj,'kicking_fgm_yds'):
-            if obj.kicking_fgm_yds >=50:
-                self.kicking_fgm_50_100 += 1
-            elif obj.kicking_fgm_yds >=40:
-                self.kicking_fgm_40_49 += 1
-            elif obj.kicking_fgm_yds > 0:
-                self.kicking_fgm_0_39 += 1
-        return self
+    # Filter to regular season games involving this team
+    team_games = schedule.filter(
+        (pl.col("game_type") == "REG")
+        & ((pl.col("home_team") == team) | (pl.col("away_team") == team))
+    )
 
-    # update with nfldb game statistics (only game stat of interest is final score)
-    def update_game(self,obj):
-        # append a new value for each entry
-        for attr, value in self.__dict__.iteritems():
-            if isinstance(getattr(self,attr), list):
-                getattr(self,attr).append(0)
-        # only keep track of this if player is DEF
-        if self.full_name=='DEF':
-            if obj.away_team==self.team:
-                pts  = obj.home_score
-            else:
-                pts = obj.away_score
+    # Calculate points allowed
+    team_games = team_games.with_columns(
+        pl.when(pl.col("home_team") == team)
+        .then(pl.col("away_score"))
+        .otherwise(pl.col("home_score"))
+        .alias("points_allowed")
+    )
 
-            if pts >=35:
-                self.defense_pa_35_100 += 1
-            elif pts >=28:
-                self.defense_pa_28_34 += 1
-            elif pts >=21:
-                self.defense_pa_21_27 += 1
-            elif pts >=14:
-                self.defense_pa_14_20 += 1
-            elif pts >=7:
-                self.defense_pa_7_13 += 1
-            elif pts >=1:
-                self.defense_pa_1_6 += 1
-            else:
-                self.defense_pa_0_0 += 1
-                
-        return self
+    return team_games.select(["week", "points_allowed"]).sort("week")
 
-# input
-name = 'Matt Ryan'
-team = 'ATL'
-season_type = 'Regular'
-season_year = 2015
 
-passing_yds = []
-for season_year in range(2011, 2014):
-    a = ff_stats(name,team,season_type,season_year)
-    passing_yds.append( a.passing_yds)
+def score_defense_pa(points_allowed):
+    """Convert points allowed to fantasy points using tier system."""
+    for low, high, pts in defense_pa_tiers:
+        if low <= points_allowed <= high:
+            return pts
+    return 0
 
-print passing_yds
 
-# Alternatively if we just want the aggregated stats, it's pretty easy
-#player_games_agg = player_games.as_aggregate()[]
-#print player_games_agg.passing_yds
+def get_defense_stats(team, season_year):
+    """Get defensive stats (sacks, INTs, etc.) aggregated by team per week."""
+    stats = nfl.load_player_stats(seasons=[season_year], summary_level="week")
 
-# do this if player is defense
+    # Filter to defensive players on this team
+    def_cols = [
+        "week", "team",
+        "def_sacks", "def_interceptions", "def_fumbles_forced", "def_tds",
+    ]
+    available = [c for c in def_cols if c in stats.columns]
+    team_def = stats.filter(pl.col("team") == team).select(available)
 
-# defense_kickret_tds
-# defense_puntret_tds
+    # Aggregate by week
+    agg_cols = [c for c in available if c not in ("week", "team")]
+    weekly = (
+        team_def.group_by("week")
+        .agg([pl.col(c).sum() for c in agg_cols])
+        .sort("week")
+    )
+
+    return weekly
+
+
+def calc_fantasy_points(player_stats_row, stat_keys=None):
+    """Calculate fantasy points for a single week from a stats row (dict)."""
+    if stat_keys is None:
+        stat_keys = scoring.keys()
+
+    total = 0.0
+    for stat, multiplier in scoring.items():
+        if stat in player_stats_row and player_stats_row[stat] is not None:
+            total += player_stats_row[stat] * multiplier
+    return total
+
+
+def player_season_fantasy_points(player_name, season_year):
+    """Get weekly fantasy points for a player over a season."""
+    stats = get_player_weekly_stats(player_name, season_year)
+
+    weekly_pts = []
+    for row in stats.iter_rows(named=True):
+        # Sum up fumbles_lost from rushing + receiving
+        row["fumbles_lost"] = (row.get("rushing_fumbles_lost") or 0) + (row.get("receiving_fumbles_lost") or 0)
+        pts = calc_fantasy_points(row)
+        weekly_pts.append({"week": row["week"], "fantasy_points": pts})
+
+    return pl.DataFrame(weekly_pts)
+
+
+if __name__ == "__main__":
+    name = "Josh Allen"
+    season_year = 2024
+
+    print(f"\n{name} - {season_year} Weekly Fantasy Points:")
+    print("-" * 40)
+
+    weekly = player_season_fantasy_points(name, season_year)
+    for row in weekly.iter_rows(named=True):
+        print(f"  Week {row['week']:2d}: {row['fantasy_points']:.1f} pts")
+
+    total = weekly["fantasy_points"].sum()
+    avg = weekly["fantasy_points"].mean()
+    print(f"\n  Total: {total:.1f} pts")
+    print(f"  Avg:   {avg:.1f} pts/week")
+
+    # Defense example
+    print(f"\nBUF Defense - {season_year} Points Against:")
+    print("-" * 40)
+    pa = get_defense_pa_stats("BUF", season_year)
+    for row in pa.iter_rows(named=True):
+        pa_pts = score_defense_pa(row["points_allowed"])
+        print(f"  Week {row['week']:2d}: allowed {row['points_allowed']} pts -> {pa_pts} fantasy pts")
