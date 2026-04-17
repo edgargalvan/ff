@@ -1,9 +1,17 @@
 """
 Hierarchical Bayesian model for NFL game outcome prediction.
-Ported from PyMC3/Theano to PyMC v5/PyTensor.
 
-The model estimates per-team attack and defense strength parameters,
-then simulates game outcomes via Poisson draws from the posterior.
+Uses a Negative Binomial log-linear model with non-centered parameterization
+to estimate per-team attack and defense strengths, then simulates game
+outcomes by drawing from the posterior.
+
+Model:
+    home_score ~ NegBin(mu=exp(intercept + home + atts[home] + defs[away]), alpha)
+    away_score ~ NegBin(mu=exp(intercept + atts[away] + defs[home]), alpha)
+
+    atts_raw ~ Normal(0, 1)          # non-centered
+    atts = sd_att * atts_raw          # rescaled
+    atts_centered = atts - mean(atts) # sum-to-zero
 """
 
 import numpy as np
@@ -17,10 +25,6 @@ import matplotlib.pyplot as plt
 def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000):
     """
     Fit a hierarchical Bayesian model to game data.
-
-    The model assumes home/away scores follow Poisson distributions with
-    log-linear rates determined by team-specific attack/defense parameters
-    and a home-field advantage term.
 
     Args:
         df: DataFrame with columns: i_home, i_away, home_{metric}, away_{metric}
@@ -38,15 +42,19 @@ def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000):
     away_metric = f"away_{metric}"
 
     with pm.Model() as model:
-        # Global parameters (weakly informative priors)
+        # Global parameters
         home = pm.Normal("home", mu=0, sigma=5)
         intercept = pm.Normal("intercept", mu=0, sigma=5)
         sd_att = pm.HalfStudentT("sd_att", nu=nu, sigma=sigma)
         sd_def = pm.HalfStudentT("sd_def", nu=nu, sigma=sigma)
 
-        # Team-specific parameters (centered)
-        atts_star = pm.Normal("atts_star", mu=0, sigma=sd_att, shape=n_teams)
-        defs_star = pm.Normal("defs_star", mu=0, sigma=sd_def, shape=n_teams)
+        # Team-specific parameters (non-centered parameterization)
+        # This avoids the funnel geometry that makes NUTS inefficient
+        # when group-level variance is small relative to data
+        atts_raw = pm.Normal("atts_raw", mu=0, sigma=1, shape=n_teams)
+        defs_raw = pm.Normal("defs_raw", mu=0, sigma=1, shape=n_teams)
+        atts_star = pm.Deterministic("atts_star", sd_att * atts_raw)
+        defs_star = pm.Deterministic("defs_star", sd_def * defs_raw)
 
         # Sum-to-zero constraint
         atts = pm.Deterministic("atts", atts_star - pt.mean(atts_star))
@@ -56,12 +64,16 @@ def bhm(df, metric="score", K=1, nu=3.0, sigma=2.5, samples=1000):
         home_theta = pt.exp(intercept + home + atts[df["i_home"].values] + defs[df["i_away"].values])
         away_theta = pt.exp(intercept + atts[df["i_away"].values] + defs[df["i_home"].values])
 
-        # Poisson likelihood
-        pm.Poisson("home_obs", mu=home_theta, observed=df[home_metric].values / K)
-        pm.Poisson("away_obs", mu=away_theta, observed=df[away_metric].values / K)
+        # Overdispersion parameter for Negative Binomial
+        # Higher alpha = less overdispersion (approaches Poisson as alpha -> inf)
+        alpha = pm.Exponential("alpha", lam=1.0)
 
-        # Fit — use default NUTS initialization (jitter+adapt_diag)
-        # MAP init can be unstable with Flat priors, so we let PyMC handle it
+        # Negative Binomial likelihood (handles overdispersion in NFL scores)
+        pm.NegativeBinomial("home_obs", mu=home_theta, alpha=alpha,
+                            observed=df[home_metric].values / K)
+        pm.NegativeBinomial("away_obs", mu=away_theta, alpha=alpha,
+                            observed=df[away_metric].values / K)
+
         idata = pm.sample(samples)
 
     return idata
@@ -84,7 +96,6 @@ def simulate_team_season(df, idata, metric="score", K=1, burnin=100):
     home_metric = f"home_{metric}"
     away_metric = f"away_{metric}"
 
-    # Get posterior samples
     posterior = idata.posterior
     n_chains = posterior.sizes["chain"]
     n_draws = posterior.sizes["draw"]
@@ -97,6 +108,7 @@ def simulate_team_season(df, idata, metric="score", K=1, burnin=100):
     defs = posterior["defs"].values[chain, draw, :]
     home_adv = float(posterior["home"].values[chain, draw])
     intercept = float(posterior["intercept"].values[chain, draw])
+    alpha = float(posterior["alpha"].values[chain, draw])
 
     season = df.copy()
 
@@ -104,9 +116,14 @@ def simulate_team_season(df, idata, metric="score", K=1, burnin=100):
     home_theta = np.exp(intercept + home_adv + atts[season["i_home"].values] + defs[season["i_away"].values])
     away_theta = np.exp(intercept + atts[season["i_away"].values] + defs[season["i_home"].values])
 
-    # Simulate scores
-    season[home_metric] = K * np.random.poisson(home_theta)
-    season[away_metric] = K * np.random.poisson(away_theta)
+    # Simulate scores via Negative Binomial
+    # numpy parameterizes NB as (n, p) where n=alpha, p=alpha/(alpha+mu)
+    def nb_draw(mu, alpha):
+        p = alpha / (alpha + mu)
+        return K * np.random.negative_binomial(alpha, p)
+
+    season[home_metric] = nb_draw(home_theta, alpha)
+    season[away_metric] = nb_draw(away_theta, alpha)
 
     return season
 
@@ -155,11 +172,9 @@ def predictions(df, simuls, teams, nsims=1000, metric="score"):
     Returns:
         hdis DataFrame with median, 10th/90th percentile, and actuals per team
     """
-    # Observed results (aggregate actual scores by team)
     df_observed = create_team_season_table(df, metric)
     observed_agg = df_observed.groupby("team")[metric].sum().reset_index()
 
-    # Compute HDIs from simulations (aggregate simulated scores by team per iteration)
     sim_agg = simuls.groupby(["team", "iteration"])[metric].sum().reset_index()
     g = sim_agg.groupby("team")
     hdis = pd.DataFrame({

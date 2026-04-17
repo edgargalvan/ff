@@ -122,8 +122,20 @@ class TestBHM:
 
     def test_posterior_has_expected_vars(self, fitted_model):
         post = fitted_model.posterior
-        for var in ["atts", "defs", "home", "intercept", "sd_att", "sd_def"]:
+        for var in ["atts", "defs", "home", "intercept", "sd_att", "sd_def",
+                     "atts_raw", "defs_raw", "alpha"]:
             assert var in post, f"Missing posterior variable: {var}"
+
+    def test_alpha_positive(self, fitted_model):
+        """NB dispersion parameter should be positive."""
+        alpha = fitted_model.posterior["alpha"].values
+        assert (alpha > 0).all()
+
+    def test_non_centered_raw_params(self, fitted_model):
+        """Raw params should be roughly standard normal (mean ~0, sd ~1)."""
+        atts_raw = fitted_model.posterior["atts_raw"].mean(dim=["chain", "draw"]).values
+        # Mean across teams should be near 0
+        assert abs(atts_raw.mean()) < 1.0
 
     def test_atts_shape(self, fitted_model):
         atts = fitted_model.posterior["atts"]
