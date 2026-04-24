@@ -163,19 +163,44 @@ Non-centered parameterization (`atts = sd_att * atts_raw` where `atts_raw ~ N(0,
 
 **Takeaway:** When group-level variance is small relative to data, non-centered is almost always better. This is a well-documented pattern — it wasn't ours to discover.
 
-### The Rolling-Regression Experiment Never Completed Its Comparison
+### Time-Varying Team Strengths Collapsed to Identifiability Failure
 
-A prior branch explored time-varying team strengths via a custom AR(1) GaussianRandomWalk. The model fit, convergence looked fine, intervals were produced — but the comparison against the static model was never run. We don't know if time-varying actually helped.
+A prior branch (`rolling-regression`) had explored time-varying team strengths via a custom AR(1) GaussianRandomWalk but never ran the comparison against a static baseline. The current project re-implemented it cleanly (`time_varying=True`) and ran the comparison. The variant failed:
 
-**Takeaway:** Feature complete is not the same as validated. A variant without a head-to-head backtest against the baseline is an unfinished experiment. Do not treat "it runs" as evidence it works.
+- 3-year mean accuracy: **57.7%** (vs 66.2% for base)
+- 3-year mean Brier: **0.247** (vs 0.223 for base)
+- ~100× slower than static (40-60 min per season vs 30-40 seconds)
 
-The `time_varying=True` option now exists in the current model. It's toggleable. It has not been validated. Do not advocate for enabling it until it has been run through a backtest against the static version on multiple seasons.
+Diagnostics from the saved predictions showed *why* it failed:
 
-### Covariates Are Not Free
+- 95th percentile of home_win_prob was only 0.592 (vs 0.721 for base) — the model never commits to a prediction
+- Mean |prob − 0.5| was 0.046 (half of base's 0.085)
+- Predicted-spread std was 1.09 (vs 3.49 for base) — under-committing by 3×
+- Picks home team 93.5% of games → essentially the "always home" baseline (~56.6% accuracy)
 
-Adding a covariate does three things: it adds a parameter, it adds an assumption, and it adds a feature-engineering step that could be wrong. A covariate with a small and noisy coefficient is probably making predictions worse, not better, on out-of-sample data.
+This is an **identifiability collapse**, not a sampler problem. The model has 8 weeks × 32 teams × 2 (attack + defense) = 512 team-week parameters, estimated from ~120 games per training window (~4 observations per parameter). The posterior over each `atts[week, team]` is near the prior, so team contributions cancel in the log-linear combination and only the home-field advantage survives.
 
-**Takeaway:** Only include covariates with (a) a clear causal story, (b) a prior expectation on sign, and (c) a nonzero posterior coefficient that matches the prior. If any of those fail, drop it.
+Faster samplers (nutpie, NumPyro) would not fix this. Adding more weeks wouldn't help much either — 16 weeks × 32 = 1024 params vs ~240 games is still catastrophically under-identified.
+
+**Takeaway:** Before adding parameters, count them against your data. For hierarchical time models, borrow strength from a static team intercept and let the GRW capture *deviations only* (`atts[t, team] ~ N(atts_static[team], sigma_t)`) — do not give each team-week an independent parameter.
+
+Potential fixes to revisit if we ever want time-varying team strengths:
+- Hierarchical time prior (static intercept + deviations, as above)
+- Much tighter innovation scale (HalfNormal(0, 0.01) not 0.1)
+- Multi-week smoothing in prediction (weighted average of recent weeks, not just last)
+- Non-centered GRW parameterization
+
+### Covariates Didn't Help on 4 Seasons
+
+The +covariates variant (`rest_advantage`, `temp_std`, `wind_std`) was run on 2022-2025. Brier differences vs base:
+
+- 2022: −0.004, 2023: 0.000, 2024: +0.002, 2025: +0.002 → mean −0.000
+
+All within the 0.01 noise floor. Accuracy differences were similarly small and non-directional (some seasons up, some down). Fit time increased ~30% per run.
+
+**Takeaway:** Simple covariates from game metadata don't help the model. The Poisson/NB scoring-rate parameterization already captures most of what teams do; adding an `exp(β × rest_days)` multiplier on top doesn't pick up signal that team-attack/defense haven't already absorbed. If future covariates are considered, they should reflect something the team parameters cannot — e.g., starting-QB identity, injury to a specific player, weather that's extreme enough to change the sport (wind > 20mph, temp < 20°F).
+
+**Also:** The original "covariates are not free" logic still holds — a covariate with a near-zero, noisy coefficient is probably making out-of-sample predictions slightly worse, not better.
 
 ### Accuracy Peaks Early in the Season Are Suspect
 
