@@ -374,3 +374,49 @@ class TestTimeVarying:
                                    metric="score", burnin=0)
         assert (sim["home_score"] >= 0).all()
         assert len(sim) == len(synthetic_data_with_covariates)
+
+
+# ---------------------------------------------------------------------------
+# Likelihood / alpha-prior variants
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def fitted_model_poisson(synthetic_data):
+    return bhm(synthetic_data, metric="score", samples=100, likelihood="poisson")
+
+
+@pytest.fixture(scope="session")
+def fitted_model_nb_tight(synthetic_data):
+    return bhm(synthetic_data, metric="score", samples=100,
+               likelihood="negbin", alpha_prior="tight")
+
+
+class TestLikelihoodVariants:
+    def test_poisson_has_no_alpha(self, fitted_model_poisson):
+        """Poisson variant should not have alpha in the posterior."""
+        assert "alpha" not in fitted_model_poisson.posterior
+
+    def test_poisson_simulation_works(self, synthetic_data, fitted_model_poisson):
+        """Simulator should detect Poisson via missing alpha and Poisson-sample."""
+        sim = simulate_team_season(synthetic_data, fitted_model_poisson,
+                                   metric="score", burnin=0)
+        assert (sim["home_score"] >= 0).all()
+        assert len(sim) == len(synthetic_data)
+
+    def test_tight_prior_increases_alpha_posterior(
+        self, fitted_model, fitted_model_nb_tight
+    ):
+        """Tight LogNormal prior should pull alpha higher than Exp(1)."""
+        alpha_weak = float(fitted_model.posterior["alpha"].mean())
+        alpha_tight = float(fitted_model_nb_tight.posterior["alpha"].mean())
+        assert alpha_tight > alpha_weak, (
+            f"tight alpha ({alpha_tight:.2f}) should exceed weak ({alpha_weak:.2f})"
+        )
+
+    def test_invalid_likelihood_raises(self, synthetic_data):
+        with pytest.raises(ValueError, match="likelihood must be"):
+            bhm(synthetic_data, samples=10, likelihood="gaussian")
+
+    def test_invalid_alpha_prior_raises(self, synthetic_data):
+        with pytest.raises(ValueError, match="alpha_prior must be"):
+            bhm(synthetic_data, samples=10, alpha_prior="medium")

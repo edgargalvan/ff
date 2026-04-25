@@ -38,7 +38,9 @@ ALL_COVARIATES = SYMMETRIC_COVARIATES + HOME_COVARIATES
 def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         nu: float = 3.0, sigma: float = 2.5, samples: int = 1000,
         time_varying: bool = False,
-        covariates: list[str] | None = None) -> az.InferenceData:
+        covariates: list[str] | None = None,
+        likelihood: str = "negbin",
+        alpha_prior: str = "weak") -> az.InferenceData:
     """
     Fit a hierarchical Bayesian model to game data.
 
@@ -52,10 +54,23 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         time_varying: if True, team strengths evolve week-to-week via GaussianRandomWalk
         covariates: list of covariate column names to include, or None for no covariates.
                     Use ALL_COVARIATES for all available.
+        likelihood: 'negbin' (default) or 'poisson'. Poisson is the Baio/Blangiardo
+                    classic. Negative Binomial adds a learned dispersion parameter
+                    suitable for overdispersed counts.
+        alpha_prior: only meaningful when likelihood='negbin'. 'weak' (default,
+                     Exponential(1) — what we shipped with) or 'tight' (LogNormal
+                     centered around alpha=15). 'tight' was motivated by the
+                     calibration inspection finding that 'weak' produces a
+                     predictive distribution ~10% wider than observed scores.
 
     Returns:
         ArviZ InferenceData object
     """
+    if likelihood not in {"negbin", "poisson"}:
+        raise ValueError(f"likelihood must be 'negbin' or 'poisson', got {likelihood!r}")
+    if alpha_prior not in {"weak", "tight"}:
+        raise ValueError(f"alpha_prior must be 'weak' or 'tight', got {alpha_prior!r}")
+
     n_teams = int(max(df["i_home"].max(), df["i_away"].max()) + 1)
     home_metric = f"home_{metric}"
     away_metric = f"away_{metric}"
@@ -83,16 +98,35 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         home_theta = pt.exp(log_home)
         away_theta = pt.exp(log_away)
 
-        # Overdispersion parameter for Negative Binomial
-        alpha = pm.Exponential("alpha", lam=1.0)
+        if likelihood == "poisson":
+            # Baio/Blangiardo classic — no dispersion parameter.
+            pm.Poisson("home_obs", mu=home_theta,
+                       observed=df[home_metric].values / K)
+            pm.Poisson("away_obs", mu=away_theta,
+                       observed=df[away_metric].values / K)
+        else:
+            # Negative Binomial with learned dispersion alpha.
+            if alpha_prior == "weak":
+                # Default since this project's inception: very loose Exp(1).
+                alpha = pm.Exponential("alpha", lam=1.0)
+            else:
+                # Informed prior. LogNormal(mu=2.7, sigma=0.4) has:
+                #   median exp(2.7) ≈ 14.9
+                #   ~90% mass in [7, 28]
+                # This places the bulk of prior mass on alpha values that produce
+                # predictive standard deviations close to observed NFL game variance.
+                alpha = pm.LogNormal("alpha", mu=2.7, sigma=0.4)
 
-        # Negative Binomial likelihood
-        pm.NegativeBinomial("home_obs", mu=home_theta, alpha=alpha,
-                            observed=df[home_metric].values / K)
-        pm.NegativeBinomial("away_obs", mu=away_theta, alpha=alpha,
-                            observed=df[away_metric].values / K)
+            pm.NegativeBinomial("home_obs", mu=home_theta, alpha=alpha,
+                                observed=df[home_metric].values / K)
+            pm.NegativeBinomial("away_obs", mu=away_theta, alpha=alpha,
+                                observed=df[away_metric].values / K)
 
         idata = pm.sample(samples)
+
+    # Stash the configuration so downstream simulators can detect it
+    idata.attrs["likelihood"] = likelihood
+    idata.attrs["alpha_prior"] = alpha_prior
 
     return idata
 
@@ -244,7 +278,10 @@ def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
 
     home_adv = float(posterior["home"].values[chain, draw])
     intercept = float(posterior["intercept"].values[chain, draw])
-    alpha = float(posterior["alpha"].values[chain, draw])
+
+    # Detect likelihood by presence/absence of alpha in posterior.
+    is_negbin = "alpha" in posterior
+    alpha = float(posterior["alpha"].values[chain, draw]) if is_negbin else None
 
     season = df.copy()
 
@@ -273,13 +310,17 @@ def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
     home_theta = np.exp(log_home)
     away_theta = np.exp(log_away)
 
-    # Simulate via Negative Binomial
-    def nb_draw(mu, a):
-        p = a / (a + mu)
-        return K * np.random.negative_binomial(a, p)
-
-    season[home_metric] = nb_draw(home_theta, alpha)
-    season[away_metric] = nb_draw(away_theta, alpha)
+    if is_negbin:
+        # Negative Binomial sampling with numpy's (n, p) parameterization.
+        def _draw(mu, a):
+            p = a / (a + mu)
+            return K * np.random.negative_binomial(a, p)
+        season[home_metric] = _draw(home_theta, alpha)
+        season[away_metric] = _draw(away_theta, alpha)
+    else:
+        # Poisson sampling.
+        season[home_metric] = K * np.random.poisson(home_theta)
+        season[away_metric] = K * np.random.poisson(away_theta)
 
     return season
 

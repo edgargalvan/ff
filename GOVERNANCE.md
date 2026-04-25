@@ -155,7 +155,27 @@ These findings are established. A new variant should not repeat these mistakes.
 
 Switching from Poisson to Negative Binomial was a bigger improvement than any covariate we could add. NFL scores are overdispersed (scoring in 3s and 7s) and Poisson's equal-mean-variance assumption is wrong by roughly 30-40%. The NB's dispersion parameter α is learned from data and captures this properly.
 
-**Takeaway:** If something is structurally wrong about the generative story, no amount of covariate engineering will fix it. Fix the likelihood first.
+The three-way likelihood experiment (Poisson vs NB-weak vs NB-tight) confirmed this empirically:
+
+| Variant | 4-yr Brier | ECE | Sim std / obs std |
+|---------|-----------|------|-------------------|
+| poisson | 0.233 | 0.122 | 0.72 (28% too narrow) |
+| nb_weak | 0.224 | 0.069 | 1.09 (9% too wide)    |
+| nb_tight | 0.221 | 0.056 | 1.07 (7% too wide)   |
+
+Poisson is dramatically over-confident; its 95% credible interval contains only 78% of observed spreads. The Baio/Blangiardo soccer choice does not transfer to NFL scoring.
+
+**Takeaway:** If something is structurally wrong about the generative story, no amount of covariate engineering will fix it. Fix the likelihood first. And — separately — don't assume choices that worked in one sport (soccer goals) transfer to another (NFL scores) without checking the variance/mean ratio first.
+
+### Inheriting Priors from a Different Domain Has Hidden Costs
+
+When the project was migrated from PyMC3 → PyMC5, the likelihood was changed from Poisson to Negative Binomial to handle NFL overdispersion. The α prior was set to `Exponential(1)` as a generic weakly-informative default, with no analysis of plausible α values for NFL scoring.
+
+The calibration inspection later showed this caused systematic under-confidence (predictive distribution ~10% too wide). The follow-up experiment tested a more informed prior (`LogNormal(2.7, 0.4)`, median ≈ 15), which produced consistent improvements across all 4 seasons but didn't clear the noise floor. Per the governance criteria, the default stayed at the original Exp(1).
+
+The tighter prior would have been a better starting point — but the lesson isn't "we picked the wrong prior." It's that **the time to think about priors is before fitting, not after**. The tighter LogNormal version would have been "interesting but not worth it" if we'd run it as an A/B against `Exp(1)` chosen with the same care; the only reason it looked tempting in inspection was that we found ourselves in a bad place we didn't intend to be in.
+
+**Takeaway:** When you change a likelihood (Poisson → NB), the new dispersion parameter is a real modeling choice and deserves the same care as the rest of the model. A "weakly-informative default" is not a free pass — it carries assumptions about plausible parameter ranges that may or may not match your domain.
 
 ### Parameterization Affects Sampling, Not Just Aesthetics
 

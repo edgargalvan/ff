@@ -74,7 +74,9 @@ def predict_week(idata, df_test: pd.DataFrame, nsims: int = 500,
 def backtest(season: int, train_window: int = 8, nsims: int = 500,
              samples: int = 500, time_varying: bool = False,
              covariates: list[str] | None = None,
-             start_week: int | None = None) -> pd.DataFrame:
+             start_week: int | None = None,
+             likelihood: str = "negbin",
+             alpha_prior: str = "weak") -> pd.DataFrame:
     """
     Rolling backtest across a season.
 
@@ -89,6 +91,9 @@ def backtest(season: int, train_window: int = 8, nsims: int = 500,
         time_varying: use time-varying team strengths
         covariates: covariate columns to include
         start_week: first week to predict (default: train_window + 1)
+        likelihood: 'negbin' (default) or 'poisson'.
+        alpha_prior: 'weak' (default Exp(1)) or 'tight' (LogNormal centered at ~15).
+                     Only relevant when likelihood='negbin'.
 
     Returns:
         DataFrame of all predictions with accuracy columns
@@ -117,7 +122,8 @@ def backtest(season: int, train_window: int = 8, nsims: int = 500,
         # Fit model
         try:
             idata = bhm(df_train, metric="score", samples=samples,
-                        time_varying=time_varying, covariates=covariates)
+                        time_varying=time_varying, covariates=covariates,
+                        likelihood=likelihood, alpha_prior=alpha_prior)
         except Exception as e:
             logger.warning("Model failed for week %d: %s", test_week, e)
             continue
