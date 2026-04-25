@@ -145,52 +145,74 @@ def _build_static_params(n_teams, sd_att, sd_def):
 
 def _build_time_varying_params(df, n_teams, sd_att, sd_def):
     """
-    Time-varying team parameters via GaussianRandomWalk.
+    Time-varying team parameters with hierarchical anchor (AR(1) state-space).
 
-    Each team's attack and defense strength evolves week-to-week.
-    The model indexes into the appropriate week for each game.
+    Each team has a static intercept (the season-long anchor) plus a
+    GaussianRandomWalk deviation centered at zero. This is the canonical
+    Glickman-Stern-style structure: the static term is well-identified by
+    pooling across all weeks of data; the deviation is constrained tight so
+    it captures real week-to-week change (form, injuries) without absorbing
+    sampling noise.
+
+    This replaces the previous independent-per-team random walk, which
+    suffered from identifiability collapse (see status doc §6 post-mortem).
+
+    Posterior variables introduced:
+        atts_static_raw, defs_static_raw  — non-centered N(0,1)
+        atts_static, defs_static          — sum-to-zero anchors
+        sd_att_innov, sd_def_innov        — shared weekly drift scales
+        delta_atts, delta_defs            — RW deviations from anchor
+        atts, defs                        — combined (n_weeks, n_teams)
     """
     weeks = sorted(df["week"].unique())
     n_weeks = len(weeks)
     week_to_idx = {w: i for i, w in enumerate(weeks)}
     week_indices = df["week"].map(week_to_idx).values
 
-    # Innovation scale (how much strength can change per week)
-    sd_att_innov = pm.HalfNormal("sd_att_innov", sigma=0.1)
-    sd_def_innov = pm.HalfNormal("sd_def_innov", sigma=0.1)
-
-    # GaussianRandomWalk: shape (n_weeks, n_teams)
-    # Each team gets an independent random walk over weeks
-    atts_walk = pm.GaussianRandomWalk(
-        "atts_walk", sigma=sd_att_innov, init_dist=pm.Normal.dist(0, sd_att),
-        shape=(n_weeks, n_teams),
+    # Static anchor — non-centered, sum-to-zero
+    atts_static_raw = pm.Normal("atts_static_raw", mu=0, sigma=1, shape=n_teams)
+    defs_static_raw = pm.Normal("defs_static_raw", mu=0, sigma=1, shape=n_teams)
+    atts_static_unc = sd_att * atts_static_raw
+    defs_static_unc = sd_def * defs_static_raw
+    atts_static = pm.Deterministic(
+        "atts_static", atts_static_unc - pt.mean(atts_static_unc)
     )
-    defs_walk = pm.GaussianRandomWalk(
-        "defs_walk", sigma=sd_def_innov, init_dist=pm.Normal.dist(0, sd_def),
-        shape=(n_weeks, n_teams),
+    defs_static = pm.Deterministic(
+        "defs_static", defs_static_unc - pt.mean(defs_static_unc)
     )
 
-    # Sum-to-zero constraint per week
-    atts_centered = pm.Deterministic(
-        "atts", atts_walk - pt.mean(atts_walk, axis=1, keepdims=True)
+    # Tight innovation scale — week-to-week drift is small
+    sd_att_innov = pm.HalfNormal("sd_att_innov", sigma=0.05)
+    sd_def_innov = pm.HalfNormal("sd_def_innov", sigma=0.05)
+
+    # AR(1) deviations from the static anchor, anchored at 0
+    delta_atts = pm.GaussianRandomWalk(
+        "delta_atts", sigma=sd_att_innov,
+        init_dist=pm.Normal.dist(0, 0.01),
+        shape=(n_weeks, n_teams),
     )
-    defs_centered = pm.Deterministic(
-        "defs", defs_walk - pt.mean(defs_walk, axis=1, keepdims=True)
+    delta_defs = pm.GaussianRandomWalk(
+        "delta_defs", sigma=sd_def_innov,
+        init_dist=pm.Normal.dist(0, 0.01),
+        shape=(n_weeks, n_teams),
     )
+
+    # Combined: static anchor (broadcast over weeks) + RW deviation
+    atts = pm.Deterministic("atts", atts_static[None, :] + delta_atts)
+    defs = pm.Deterministic("defs", defs_static[None, :] + delta_defs)
 
     # Index into the right week for each game
-    atts = atts_centered[week_indices, :]
-    defs = defs_centered[week_indices, :]
+    atts_indexed = atts[week_indices, :]
+    defs_indexed = defs[week_indices, :]
 
     # For each game, select the home/away team's strength at that week
     game_indices = np.arange(len(df))
-    atts_home = atts[game_indices, df["i_home"].values]
-    atts_away = atts[game_indices, df["i_away"].values]
-    defs_home = defs[game_indices, df["i_home"].values]
-    defs_away = defs[game_indices, df["i_away"].values]
+    atts_home = atts_indexed[game_indices, df["i_home"].values]
+    atts_away = atts_indexed[game_indices, df["i_away"].values]
+    defs_home = defs_indexed[game_indices, df["i_home"].values]
+    defs_away = defs_indexed[game_indices, df["i_away"].values]
 
-    # Return as indexable-like objects (just the game-level values)
-    # We wrap in a container so the caller can use atts[df["i_home"].values] syntax
+    # Wrap in stateful indexer so the caller can use atts[df["i_home"]...] syntax
     return _GameIndexed(atts_home, atts_away), _GameIndexed(defs_home, defs_away)
 
 
@@ -262,14 +284,16 @@ def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
     chain = np.random.randint(0, n_chains)
     draw = np.random.randint(burnin, n_draws)
 
-    # Check if model used time-varying params
-    is_time_varying = "atts_walk" in posterior
+    # Check if model used time-varying params (now: hierarchical-anchor AR(1))
+    is_time_varying = "delta_atts" in posterior
 
     if is_time_varying:
-        # atts has shape (n_weeks, n_teams) — use last week's values for prediction
-        atts_all = posterior["atts"].values[chain, draw, :, :]  # (n_weeks, n_teams)
+        # `atts` is a deterministic with shape (n_weeks, n_teams) =
+        # atts_static[team] + delta_atts[week, team].
+        # For prediction we use the last training week's combined estimate
+        # (static term dominates; delta provides recent-form adjustment).
+        atts_all = posterior["atts"].values[chain, draw, :, :]
         defs_all = posterior["defs"].values[chain, draw, :, :]
-        # Use last available week's strength estimates
         atts = atts_all[-1, :]
         defs = defs_all[-1, :]
     else:

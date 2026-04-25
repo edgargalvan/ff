@@ -347,13 +347,24 @@ def fitted_model_time_varying(synthetic_data_with_covariates):
 
 
 class TestTimeVarying:
+    """Tests for the hierarchical-anchor AR(1) state-space variant.
+
+    Posterior structure:
+        atts_static, defs_static  — non-centered season-long anchors
+        delta_atts, delta_defs    — RW deviations centered at zero
+        atts, defs                — combined (n_weeks, n_teams) deterministic
+        sd_att_innov, sd_def_innov — shared weekly drift scales
+    """
+
     def test_model_fits(self, fitted_model_time_varying):
         assert fitted_model_time_varying is not None
 
-    def test_walk_in_posterior(self, fitted_model_time_varying):
+    def test_anchor_and_deviation_in_posterior(self, fitted_model_time_varying):
         post = fitted_model_time_varying.posterior
-        assert "atts_walk" in post
-        assert "defs_walk" in post
+        # New variables (hierarchical anchor + RW deviation)
+        for var in ["atts_static", "defs_static", "delta_atts", "delta_defs",
+                    "sd_att_innov", "sd_def_innov"]:
+            assert var in post, f"Missing posterior variable: {var}"
 
     def test_atts_shape_is_weeks_by_teams(self, fitted_model_time_varying):
         atts = fitted_model_time_varying.posterior["atts"]
@@ -362,10 +373,29 @@ class TestTimeVarying:
         assert atts.shape[-1] == 4   # 4 teams
         assert atts.shape[-2] == 5   # 5 weeks
 
+    def test_atts_static_shape_is_teams(self, fitted_model_time_varying):
+        atts_static = fitted_model_time_varying.posterior["atts_static"]
+        # (chains, draws, n_teams)
+        assert len(atts_static.shape) == 3
+        assert atts_static.shape[-1] == 4
+
     def test_innovation_scale_positive(self, fitted_model_time_varying):
         post = fitted_model_time_varying.posterior
         assert (post["sd_att_innov"].values > 0).all()
         assert (post["sd_def_innov"].values > 0).all()
+
+    def test_anchor_dominates_deviation(self, fitted_model_time_varying):
+        """Static anchor should account for most of the team-strength variation;
+        weekly deviations should be small. This is the structural identifiability
+        win over the previous independent-walk parameterization."""
+        post = fitted_model_time_varying.posterior
+        atts_static_std = float(post["atts_static"].std())
+        delta_atts_std = float(post["delta_atts"].std())
+        # Static anchor should have larger spread than weekly deviations
+        assert atts_static_std > delta_atts_std, (
+            f"Anchor std ({atts_static_std:.3f}) should exceed "
+            f"deviation std ({delta_atts_std:.3f})"
+        )
 
     def test_simulation_works(self, synthetic_data_with_covariates,
                                fitted_model_time_varying):

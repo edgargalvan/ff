@@ -72,6 +72,8 @@ A variant meaningfully beats the base model if:
 - Coverage moves from outside [85%, 95%] into that range, OR
 - ECE improves by > 0.02
 
+**AND** no other metric regresses by more than its own noise floor. The "OR" above gives multiple ways to demonstrate improvement, but improvement on one metric does *not* license regression on another. Specifically: a variant whose ECE improves while Brier worsens by > 0.01 is rejected, because Brier is a proper scoring rule that captures both informativeness and calibration. ECE alone can be gamed by a model that hedges to 0.5 (perfect calibration, zero information). Brier penalizes that correctly.
+
 Raw accuracy is reported but does not rank variants. A variant that improves accuracy by 2 points while worsening calibration is *worse*, not better — it's become more overconfident.
 
 ### Decomposition quality is the other metric
@@ -209,6 +211,32 @@ Potential fixes to revisit if we ever want time-varying team strengths:
 - Much tighter innovation scale (HalfNormal(0, 0.01) not 0.1)
 - Multi-week smoothing in prediction (weighted average of recent weeks, not just last)
 - Non-centered GRW parameterization
+
+### The Hierarchical-Anchor AR(1) Fix Also Failed
+
+The "potential fixes" listed above came directly from the lit review on Glickman & Stern (1998), the canonical NFL Bayesian framework. We implemented them: a static team-strength anchor + a `pm.GaussianRandomWalk` deviation around it, with a tight innovation scale (`HalfNormal(0.05)`) and shared variance across teams. The architecture compiles, samples, and avoids the identifiability collapse of the previous version (the static-anchor-dominates-deviation test in the test suite confirms this). Tests pass.
+
+It still made predictions worse on 4 seasons of data:
+
+| Season | base (Brier) | ar1 (Brier) | Δ      |
+|--------|-------------|-------------|--------|
+| 2022   | 0.229       | 0.243       | +0.014 |
+| 2023   | 0.235       | 0.245       | +0.010 |
+| 2024   | 0.208       | 0.252       | +0.044 |
+| 2025   | 0.234       | 0.252       | +0.018 |
+| Mean   | 0.227       | 0.248       | **+0.021** |
+
+Mean accuracy: 61.9% → 54.7% (−7.2pp). Runtime exploded: the 4-season AR(1) backtest took 391 minutes (one season took 3.7 hours alone). All four seasons regress past the noise floor in the same direction.
+
+Counterintuitively, the AR(1) model has **better aggregate ECE** (0.015 vs 0.085 for base). But this improvement comes from the model hedging to 0.5 — the 95th percentile of `home_win_prob` is much lower than base, so individual predictions are less informative. Brier (a proper scoring rule) catches this and shows the model is genuinely worse. ECE alone is gamed by uninformative hedging.
+
+**Takeaway 1:** "Just add a hierarchical anchor" is not sufficient. The static anchor + RW interaction creates a different problem than independent RWs but doesn't solve the underlying issue: at 8-week training windows with ~5 games per team, there isn't enough information to identify both season-long ability AND week-to-week change, and the model's predictions degrade.
+
+**Takeaway 2:** ECE is a necessary but not sufficient calibration metric. A model that hedges to 0.5 will achieve perfect ECE while making no useful predictions. Use Brier (proper scoring rule) as the primary metric and ECE as a diagnostic. The governance criterion was updated to require: "improvement on one metric does not license regression on another past the noise floor."
+
+**Takeaway 3:** Lit-review-derived fixes are not free. The lit review pointed at hierarchical time priors as the canonical solution. We implemented it correctly per the published recipe (Glickman-Stern 1998 + the Pitt-Walker hierarchical anchor pattern). It still didn't work on our data scale. Either NFL within-season time variation is not the dominant source of predictability (and the static model is already capturing what's there), or our 8-week training window is too small for the structure to identify, or both. Glickman-Stern's reported gains may have come from full-season fits (not 8-week rolling windows) — a context our backtest cannot match.
+
+The `time_varying=True` flag now points at the hierarchical-anchor implementation but is still **rejected as a default**. Code remains in the tree (tests pass, reproducible), documented as a rejected variant.
 
 ### Covariates Didn't Help on 4 Seasons
 
