@@ -450,3 +450,58 @@ class TestLikelihoodVariants:
     def test_invalid_alpha_prior_raises(self, synthetic_data):
         with pytest.raises(ValueError, match="alpha_prior must be"):
             bhm(synthetic_data, samples=10, alpha_prior="medium")
+
+
+# ---------------------------------------------------------------------------
+# Multi-season carryover (team_priors kwarg)
+# ---------------------------------------------------------------------------
+
+class TestTeamPriors:
+    def test_team_priors_kwarg_accepted(self, synthetic_data):
+        """bhm() should accept team_priors and produce valid posterior."""
+        n_teams = 4
+        priors = {
+            "atts_mean": np.zeros(n_teams),
+            "defs_mean": np.zeros(n_teams),
+            "carryover_sd": 0.1,
+        }
+        idata = bhm(synthetic_data, samples=100, team_priors=priors)
+        assert idata is not None
+        assert "atts" in idata.posterior
+
+    def test_team_priors_shifts_posterior_toward_prior_mean(self, synthetic_data):
+        """A strong prior far from zero should pull the posterior in that direction."""
+        n_teams = 4
+        # Push T0 attack way up, T3 attack way down via a strong prior
+        atts_prior = np.array([1.0, 0.0, 0.0, -1.0])
+        defs_prior = np.zeros(n_teams)
+        priors = {
+            "atts_mean": atts_prior,
+            "defs_mean": defs_prior,
+            "carryover_sd": 0.05,   # tight — prior dominates
+        }
+        idata = bhm(synthetic_data, samples=200, team_priors=priors)
+        atts_mean = idata.posterior["atts"].mean(dim=["chain", "draw"]).values
+        # T0 attack should be substantially above T3 attack with this prior
+        assert atts_mean[0] - atts_mean[3] > 1.0, (
+            f"With strong prior, T0-T3 gap should be >1; got {atts_mean[0]-atts_mean[3]:.3f}"
+        )
+
+    def test_team_priors_shape_validation(self, synthetic_data):
+        """Wrong-shape arrays should raise."""
+        bad_priors = {
+            "atts_mean": np.zeros(3),  # wrong size (4 teams expected)
+            "defs_mean": np.zeros(4),
+        }
+        with pytest.raises(ValueError, match="must have shape"):
+            bhm(synthetic_data, samples=10, team_priors=bad_priors)
+
+    def test_team_priors_incompatible_with_time_varying(self, synthetic_data):
+        """Should raise when combined with time_varying=True."""
+        priors = {
+            "atts_mean": np.zeros(4),
+            "defs_mean": np.zeros(4),
+        }
+        with pytest.raises(ValueError, match="not currently supported"):
+            bhm(synthetic_data, samples=10,
+                time_varying=True, team_priors=priors)

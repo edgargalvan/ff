@@ -238,6 +238,33 @@ Counterintuitively, the AR(1) model has **better aggregate ECE** (0.015 vs 0.085
 
 The `time_varying=True` flag now points at the hierarchical-anchor implementation but is still **rejected as a default**. Code remains in the tree (tests pass, reproducible), documented as a rejected variant.
 
+### Multi-Season Carryover Did Not Help
+
+GS-style improvement #2: pass prior-year posterior team-strength means as informed priors for the current year (`team_priors` kwarg, `carryover_sd = 0.1` log-rate units). Implemented, tested (4 unit tests), backtested across the chain 2022 → 2023 → 2024 → 2025 (the `2022` season is identical for both arms since it's the chain origin and has no prior to inform it):
+
+| Season | base (Brier) | carryover (Brier) | Δ      |
+|--------|-------------|-------------------|--------|
+| 2023   | 0.235       | 0.237             | +0.002 |
+| 2024   | 0.205       | 0.212             | +0.007 |
+| 2025   | 0.234       | 0.235             | +0.001 |
+| Mean   | 0.225       | 0.228             | **+0.003** |
+
+Pooled metrics (2023-2025): accuracy 64.0% → 61.8% (−2.2pp); Brier 0.225 → 0.228 (+0.003); ECE 0.054 → 0.072 (+0.018). All three regress in the same direction across 3 seasons. None individually clears the noise floor, but the consistent direction is informative.
+
+The 2024 result is the most striking: 71.1% → 69.8% accuracy, Brier worse by 0.007. 2024 had several teams change substantively from 2023 (WAS with Jayden Daniels, multiple coaching shakeups). A tight carryover prior pulled estimates back toward stale 2023 posteriors and over-shrank the actual changes.
+
+In the high-confidence bins, carryover commits to *more* predictions but is *less* accurate when it does:
+
+| 2024 confidence tier | base (acc, n)     | carryover (acc, n) |
+|---------------------|-------------------|--------------------|
+| ≥70%                | 84.2% (n=19)      | 71.4% (n=28)       |
+
+Same operational pattern as the AR(1) failure: prior-informed approaches commit more aggressively but with worse calibration in the bins where they commit. **Decision: REJECTED.** The `team_priors` kwarg stays in the API as a documented option but is not the default.
+
+**Takeaway 1:** Carryover's intuitive value (don't throw away prior-year info) competes against its real cost (the prior is wrong about teams that genuinely changed). At an 8-week training window the in-season data already overwhelms a tight prior most weeks; the prior only matters in early-season weeks, which are inherently the hardest. The cost shows up most when teams change a lot.
+
+**Takeaway 2:** A pre-registered tight `carryover_sd = 0.1` is what was tested. Looser values (e.g., 0.3) might fare better, but tuning the hyperparameter to chase a positive result would be the kind of post-hoc optimization the discipline doc warns against. The right next experiment, if revisited, would pre-register a small range (e.g., 0.05, 0.15, 0.30) and report all results — not pick the best post hoc.
+
 ### Covariates Didn't Help on 4 Seasons
 
 The +covariates variant (`rest_advantage`, `temp_std`, `wind_std`) was run on 2022-2025. Brier differences vs base:

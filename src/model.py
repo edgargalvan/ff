@@ -40,7 +40,8 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         time_varying: bool = False,
         covariates: list[str] | None = None,
         likelihood: str = "negbin",
-        alpha_prior: str = "weak") -> az.InferenceData:
+        alpha_prior: str = "weak",
+        team_priors: dict | None = None) -> az.InferenceData:
     """
     Fit a hierarchical Bayesian model to game data.
 
@@ -62,6 +63,14 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
                      centered around alpha=15). 'tight' was motivated by the
                      calibration inspection finding that 'weak' produces a
                      predictive distribution ~10% wider than observed scores.
+        team_priors: optional dict for multi-season carryover. Shape:
+                     {"atts_mean": np.ndarray of length n_teams,
+                      "defs_mean": np.ndarray of length n_teams,
+                      "carryover_sd": float (default 0.1)}.
+                     When provided, team-strength priors are centered at the
+                     supplied means rather than zero, and the cross-team scale
+                     is `carryover_sd` instead of the learned `sd_att/sd_def`.
+                     Not currently combinable with `time_varying=True`.
 
     Returns:
         ArviZ InferenceData object
@@ -70,6 +79,8 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         raise ValueError(f"likelihood must be 'negbin' or 'poisson', got {likelihood!r}")
     if alpha_prior not in {"weak", "tight"}:
         raise ValueError(f"alpha_prior must be 'weak' or 'tight', got {alpha_prior!r}")
+    if team_priors is not None and time_varying:
+        raise ValueError("team_priors is not currently supported with time_varying=True")
 
     n_teams = int(max(df["i_home"].max(), df["i_away"].max()) + 1)
     home_metric = f"home_{metric}"
@@ -85,7 +96,9 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         if time_varying:
             atts, defs = _build_time_varying_params(df, n_teams, sd_att, sd_def)
         else:
-            atts, defs = _build_static_params(n_teams, sd_att, sd_def)
+            atts, defs = _build_static_params(
+                n_teams, sd_att, sd_def, team_priors=team_priors
+            )
 
         # Log-linear model for scoring rates
         log_home = intercept + home + atts[df["i_home"].values] + defs[df["i_away"].values]
@@ -131,12 +144,37 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
     return idata
 
 
-def _build_static_params(n_teams, sd_att, sd_def):
-    """Non-centered static team parameters."""
+def _build_static_params(n_teams, sd_att, sd_def, team_priors=None):
+    """Non-centered static team parameters.
+
+    If `team_priors` is provided (dict with `atts_mean`, `defs_mean` arrays
+    of length n_teams and optional `carryover_sd` scalar), the prior on each
+    team's strength is centered at the supplied mean instead of zero, and
+    the cross-team scale is `carryover_sd` instead of the learned `sd_att`/
+    `sd_def`. This implements multi-season carryover: prior-year posterior
+    means inform the current-year prior.
+    """
     atts_raw = pm.Normal("atts_raw", mu=0, sigma=1, shape=n_teams)
     defs_raw = pm.Normal("defs_raw", mu=0, sigma=1, shape=n_teams)
-    atts_star = pm.Deterministic("atts_star", sd_att * atts_raw)
-    defs_star = pm.Deterministic("defs_star", sd_def * defs_raw)
+
+    if team_priors is not None:
+        carryover_sd = team_priors.get("carryover_sd", 0.1)
+        atts_prior_mean = np.asarray(team_priors["atts_mean"], dtype=float)
+        defs_prior_mean = np.asarray(team_priors["defs_mean"], dtype=float)
+        if atts_prior_mean.shape != (n_teams,) or defs_prior_mean.shape != (n_teams,):
+            raise ValueError(
+                f"team_priors arrays must have shape ({n_teams},); got "
+                f"atts={atts_prior_mean.shape}, defs={defs_prior_mean.shape}"
+            )
+        atts_star = pm.Deterministic(
+            "atts_star", atts_prior_mean + carryover_sd * atts_raw
+        )
+        defs_star = pm.Deterministic(
+            "defs_star", defs_prior_mean + carryover_sd * defs_raw
+        )
+    else:
+        atts_star = pm.Deterministic("atts_star", sd_att * atts_raw)
+        defs_star = pm.Deterministic("defs_star", sd_def * defs_raw)
 
     atts = pm.Deterministic("atts", atts_star - pt.mean(atts_star))
     defs = pm.Deterministic("defs", defs_star - pt.mean(defs_star))
