@@ -505,3 +505,39 @@ class TestTeamPriors:
         with pytest.raises(ValueError, match="not currently supported"):
             bhm(synthetic_data, samples=10,
                 time_varying=True, team_priors=priors)
+
+
+# ---------------------------------------------------------------------------
+# Per-team home-field advantage
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def fitted_model_per_team_home(synthetic_data):
+    return bhm(synthetic_data, samples=200, per_team_home=True)
+
+
+class TestPerTeamHome:
+    def test_home_team_in_posterior(self, fitted_model_per_team_home):
+        """Per-team home advantage should appear as `home_team` in posterior;
+        the scalar `home` should NOT."""
+        post = fitted_model_per_team_home.posterior
+        assert "home_team" in post
+        assert "mu_home" in post
+        assert "sigma_home" in post
+        assert "home" not in post  # was replaced
+
+    def test_home_team_shape(self, fitted_model_per_team_home):
+        """home_team should have one entry per team."""
+        home_team = fitted_model_per_team_home.posterior["home_team"]
+        assert home_team.shape[-1] == 4   # 4 synthetic teams
+
+    def test_sigma_home_positive(self, fitted_model_per_team_home):
+        """sigma_home is the cross-team scale; must be positive."""
+        sigma_home = fitted_model_per_team_home.posterior["sigma_home"].values
+        assert (sigma_home > 0).all()
+
+    def test_simulation_works(self, synthetic_data, fitted_model_per_team_home):
+        sim = simulate_team_season(synthetic_data, fitted_model_per_team_home,
+                                   metric="score", burnin=0)
+        assert (sim["home_score"] >= 0).all()
+        assert len(sim) == len(synthetic_data)

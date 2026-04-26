@@ -41,7 +41,8 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         covariates: list[str] | None = None,
         likelihood: str = "negbin",
         alpha_prior: str = "weak",
-        team_priors: dict | None = None) -> az.InferenceData:
+        team_priors: dict | None = None,
+        per_team_home: bool = False) -> az.InferenceData:
     """
     Fit a hierarchical Bayesian model to game data.
 
@@ -71,6 +72,13 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
                      supplied means rather than zero, and the cross-team scale
                      is `carryover_sd` instead of the learned `sd_att/sd_def`.
                      Not currently combinable with `time_varying=True`.
+        per_team_home: if True, replace the single shared `home` scalar with a
+                       hierarchical per-team home-field advantage:
+                           mu_home   ~ Normal(0, 5)
+                           sigma_home ~ HalfStudentT(3, 0.3)
+                           home_team[t] = mu_home + sigma_home * raw[t]
+                       Each team's home games use that team's home_team[t]
+                       additive log-rate term.
 
     Returns:
         ArviZ InferenceData object
@@ -88,10 +96,22 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
 
     with pm.Model() as model:
         # Global parameters
-        home = pm.Normal("home", mu=0, sigma=5)
         intercept = pm.Normal("intercept", mu=0, sigma=5)
         sd_att = pm.HalfStudentT("sd_att", nu=nu, sigma=sigma)
         sd_def = pm.HalfStudentT("sd_def", nu=nu, sigma=sigma)
+
+        # Home-field advantage: scalar (default) or per-team hierarchical.
+        if per_team_home:
+            mu_home = pm.Normal("mu_home", mu=0, sigma=5)
+            sigma_home = pm.HalfStudentT("sigma_home", nu=3, sigma=0.3)
+            home_raw = pm.Normal("home_raw", mu=0, sigma=1, shape=n_teams)
+            home_team = pm.Deterministic("home_team",
+                                          mu_home + sigma_home * home_raw)
+            # Per-game home advantage indexed by home team
+            home_term = home_team[df["i_home"].values]
+        else:
+            home = pm.Normal("home", mu=0, sigma=5)
+            home_term = home  # scalar; broadcasts when added below
 
         if time_varying:
             atts, defs = _build_time_varying_params(df, n_teams, sd_att, sd_def)
@@ -101,7 +121,7 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
             )
 
         # Log-linear model for scoring rates
-        log_home = intercept + home + atts[df["i_home"].values] + defs[df["i_away"].values]
+        log_home = intercept + home_term + atts[df["i_home"].values] + defs[df["i_away"].values]
         log_away = intercept + atts[df["i_away"].values] + defs[df["i_home"].values]
 
         # Add covariates
@@ -338,8 +358,16 @@ def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
         atts = posterior["atts"].values[chain, draw, :]
         defs = posterior["defs"].values[chain, draw, :]
 
-    home_adv = float(posterior["home"].values[chain, draw])
     intercept = float(posterior["intercept"].values[chain, draw])
+
+    # Home-field advantage: scalar (default) or per-team vector.
+    is_per_team_home = "home_team" in posterior
+    if is_per_team_home:
+        home_team_vec = posterior["home_team"].values[chain, draw, :]
+        home_term = home_team_vec  # indexed below per-game
+    else:
+        home_adv = float(posterior["home"].values[chain, draw])
+        home_term = None  # scalar use below
 
     # Detect likelihood by presence/absence of alpha in posterior.
     is_negbin = "alpha" in posterior
@@ -348,7 +376,15 @@ def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
     season = df.copy()
 
     # Compute log-linear rates
-    log_home = intercept + home_adv + atts[season["i_home"].values] + defs[season["i_away"].values]
+    if is_per_team_home:
+        log_home = (intercept
+                    + home_term[season["i_home"].values]
+                    + atts[season["i_home"].values]
+                    + defs[season["i_away"].values])
+    else:
+        log_home = (intercept + home_adv
+                    + atts[season["i_home"].values]
+                    + defs[season["i_away"].values])
     log_away = intercept + atts[season["i_away"].values] + defs[season["i_home"].values]
 
     # Add covariate effects

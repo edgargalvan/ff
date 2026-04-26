@@ -77,7 +77,8 @@ def backtest(season: int, train_window: int = 8, nsims: int = 500,
              start_week: int | None = None,
              likelihood: str = "negbin",
              alpha_prior: str = "weak",
-             team_priors: dict | None = None) -> pd.DataFrame:
+             team_priors: dict | None = None,
+             per_team_home: bool = False) -> pd.DataFrame:
     """
     Rolling backtest across a season.
 
@@ -125,7 +126,8 @@ def backtest(season: int, train_window: int = 8, nsims: int = 500,
             idata = bhm(df_train, metric="score", samples=samples,
                         time_varying=time_varying, covariates=covariates,
                         likelihood=likelihood, alpha_prior=alpha_prior,
-                        team_priors=team_priors)
+                        team_priors=team_priors,
+                        per_team_home=per_team_home)
         except Exception as e:
             logger.warning("Model failed for week %d: %s", test_week, e)
             continue

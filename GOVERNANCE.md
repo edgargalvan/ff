@@ -265,6 +265,28 @@ Same operational pattern as the AR(1) failure: prior-informed approaches commit 
 
 **Takeaway 2:** A pre-registered tight `carryover_sd = 0.1` is what was tested. Looser values (e.g., 0.3) might fare better, but tuning the hyperparameter to chase a positive result would be the kind of post-hoc optimization the discipline doc warns against. The right next experiment, if revisited, would pre-register a small range (e.g., 0.05, 0.15, 0.30) and report all results — not pick the best post hoc.
 
+### Per-Team Home-Field Advantage Didn't Help
+
+GS-style improvement #3: replace the single shared `home` scalar with a hierarchical per-team home-field advantage (`mu_home + sigma_home * raw[t]`, non-centered). Tested across 2022-2025:
+
+| Season | base (Brier) | per_team_home (Brier) | Δ      |
+|--------|-------------|-----------------------|--------|
+| 2022   | 0.223       | 0.225                 | +0.002 |
+| 2023   | 0.236       | 0.234                 | −0.002 |
+| 2024   | 0.205       | 0.205                 |  0.000 |
+| 2025   | 0.231       | 0.233                 | +0.002 |
+| Mean   | 0.224       | 0.224                 | **~0.000** |
+
+Pooled metrics: accuracy 64.4% → 62.5% (−1.9pp); Brier identical (0.224 → 0.224); ECE 0.060 → 0.086 (+0.026, in the wrong direction but within noise floor of 0.02 give or take). All within noise. The cleanest "no effect" of the four GS experiments.
+
+The model successfully estimates a per-team HFA structure on a full-season fit: global `mu_home = +0.076` (≈ 7.9% scoring uplift), `sigma_home = 0.054` (cross-team variation in HFA). The per-team estimates range from +0.04 to +0.10. Each team's individual SD is ~0.07 — comparable to the cross-team spread, meaning the hierarchical model can't resolve which teams have above-average home advantage with confidence.
+
+This is a small-N identifiability problem: each team plays ~17 home games per season, and the hierarchical pooling between the `mu_home`/`sigma_home` hyperparameter and the team-level `home_raw[t]` works as expected — it just can't extract more signal than the data contains.
+
+**Takeaway:** Per-team HFA is a real phenomenon (sigma_home > 0 in the posterior), but identification at 8-week training windows is poor, and the small per-team improvements wash out against the increased predictive variance. This isn't a "the structure was wrong" failure — it's a "the data isn't dense enough" failure. The kind of variant that would benefit most from more seasons of training data; would be worth re-testing if the project ever pools across multiple training years.
+
+**Decision: REJECTED.** `per_team_home=True` stays in the API as a documented option. Default remains the single shared scalar.
+
 ### Covariates Didn't Help on 4 Seasons
 
 The +covariates variant (`rest_advantage`, `temp_std`, `wind_std`) was run on 2022-2025. Brier differences vs base:
