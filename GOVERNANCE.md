@@ -287,6 +287,34 @@ This is a small-N identifiability problem: each team plays ~17 home games per se
 
 **Decision: REJECTED.** `per_team_home=True` stays in the API as a documented option. Default remains the single shared scalar.
 
+### Per-Team NB Dispersion: Borderline Improvement, Still Rejected
+
+GS-style improvement #4: replace shared NB dispersion `α` with hierarchical per-team `α[t]` (`exp(log_alpha_mean + sigma_log_alpha * raw[t])`). Each team's score uses its own alpha in the likelihood.
+
+| Season | base (Brier) | per_team_alpha (Brier) | Δ      |
+|--------|-------------|------------------------|--------|
+| 2022   | 0.227       | 0.224                  | −0.003 |
+| 2023   | 0.235       | 0.231                  | −0.004 |
+| 2024   | 0.204       | 0.200                  | −0.004 |
+| 2025   | 0.238       | 0.232                  | −0.006 |
+| Mean   | 0.226       | 0.222                  | **−0.004** |
+
+This is the only one of the four GS experiments where Brier improves in **all four seasons** in the right direction. The improvement is consistent. But the magnitude (0.004) is below the 0.01 noise floor, so per the discipline doc: **rejected as default**.
+
+ECE went the other way (0.072 → 0.084) but within noise. Accuracy effectively tied (62.0% → 62.2%).
+
+**Bonus value: interpretable per-team consistency.** On a full-2024 fit:
+
+| | Top 5 (most consistent — high α) | Bottom 5 (most boom-or-bust — low α) |
+|---|---|---|
+| | GB (11.4), BAL (11.2), LV, WAS, PHI (10.4) | NO (6.1), NYG (6.4), CAR (6.7), CHI (6.9), CLE (7.2) |
+
+Ordering matches team narratives — GB/BAL as steadiest offenses in 2024 is well-documented; the bottom of the list (NYG, CAR, CHI, NO, CLE) is the QB-issue / inconsistent-offense list. The model's posterior produces a sensible per-team consistency ranking even when the variant doesn't improve aggregate metrics.
+
+**Takeaway:** Per-team dispersion is the most defensible of the four GS-style additions — consistent direction across 4 seasons, interpretable team rankings, near-zero runtime cost. The fact that it doesn't quite clear the 0.01 Brier threshold is the strict discipline talking; in a less stringent regime this would be a candidate for adoption. The right next step (if revisited) is more seasons of training data; the per-team estimates have wide SDs (±2-5 on αs around 8) at our current sample size.
+
+**Decision: REJECTED (default stays at shared α with weak prior).** `per_team_alpha=True` available as a documented option.
+
 ### Covariates Didn't Help on 4 Seasons
 
 The +covariates variant (`rest_advantage`, `temp_std`, `wind_std`) was run on 2022-2025. Brier differences vs base:

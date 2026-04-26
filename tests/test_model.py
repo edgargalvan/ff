@@ -541,3 +541,43 @@ class TestPerTeamHome:
                                    metric="score", burnin=0)
         assert (sim["home_score"] >= 0).all()
         assert len(sim) == len(synthetic_data)
+
+
+# ---------------------------------------------------------------------------
+# Per-team alpha (NB dispersion)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def fitted_model_per_team_alpha(synthetic_data):
+    return bhm(synthetic_data, samples=200, per_team_alpha=True)
+
+
+class TestPerTeamAlpha:
+    def test_alpha_team_in_posterior(self, fitted_model_per_team_alpha):
+        post = fitted_model_per_team_alpha.posterior
+        assert "alpha_team" in post
+        assert "log_alpha_mean" in post
+        assert "sigma_log_alpha" in post
+        # Shared scalar alpha should NOT be present
+        assert "alpha" not in post
+
+    def test_alpha_team_shape(self, fitted_model_per_team_alpha):
+        alpha_team = fitted_model_per_team_alpha.posterior["alpha_team"]
+        assert alpha_team.shape[-1] == 4  # 4 teams
+
+    def test_alpha_team_positive(self, fitted_model_per_team_alpha):
+        """All team alphas must be positive (log-normal parameterization)."""
+        alpha_team = fitted_model_per_team_alpha.posterior["alpha_team"].values
+        assert (alpha_team > 0).all()
+
+    def test_simulation_works(self, synthetic_data, fitted_model_per_team_alpha):
+        sim = simulate_team_season(synthetic_data, fitted_model_per_team_alpha,
+                                   metric="score", burnin=0)
+        assert (sim["home_score"] >= 0).all()
+        assert len(sim) == len(synthetic_data)
+
+    def test_per_team_alpha_requires_negbin(self, synthetic_data):
+        """Should raise when combined with likelihood='poisson'."""
+        with pytest.raises(ValueError, match="requires likelihood='negbin'"):
+            bhm(synthetic_data, samples=10,
+                likelihood="poisson", per_team_alpha=True)

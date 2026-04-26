@@ -42,7 +42,8 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         likelihood: str = "negbin",
         alpha_prior: str = "weak",
         team_priors: dict | None = None,
-        per_team_home: bool = False) -> az.InferenceData:
+        per_team_home: bool = False,
+        per_team_alpha: bool = False) -> az.InferenceData:
     """
     Fit a hierarchical Bayesian model to game data.
 
@@ -79,6 +80,14 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
                            home_team[t] = mu_home + sigma_home * raw[t]
                        Each team's home games use that team's home_team[t]
                        additive log-rate term.
+        per_team_alpha: only valid with likelihood='negbin'. If True, replace
+                        the shared `alpha` dispersion with a hierarchical
+                        per-team variant:
+                            log_alpha_mean   ~ Normal(2.0, 0.5)
+                            sigma_log_alpha  ~ HalfNormal(0.3)
+                            alpha_team[t] = exp(log_alpha_mean + sigma_log_alpha * raw[t])
+                        Each team's score uses its own alpha_team[t] in the
+                        Negative Binomial likelihood.
 
     Returns:
         ArviZ InferenceData object
@@ -89,6 +98,8 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
         raise ValueError(f"alpha_prior must be 'weak' or 'tight', got {alpha_prior!r}")
     if team_priors is not None and time_varying:
         raise ValueError("team_priors is not currently supported with time_varying=True")
+    if per_team_alpha and likelihood != "negbin":
+        raise ValueError("per_team_alpha requires likelihood='negbin'")
 
     n_teams = int(max(df["i_home"].max(), df["i_away"].max()) + 1)
     home_metric = f"home_{metric}"
@@ -139,21 +150,38 @@ def bhm(df: pd.DataFrame, metric: str = "score", K: int = 1,
                        observed=df[away_metric].values / K)
         else:
             # Negative Binomial with learned dispersion alpha.
-            if alpha_prior == "weak":
-                # Default since this project's inception: very loose Exp(1).
-                alpha = pm.Exponential("alpha", lam=1.0)
+            if per_team_alpha:
+                # Hierarchical per-team dispersion. Each team's score has its
+                # own dispersion, anchored to a shared log-normal prior.
+                # Centered around log_alpha=2.0 (alpha≈7.4, between weak and tight).
+                log_alpha_mean = pm.Normal("log_alpha_mean", mu=2.0, sigma=0.5)
+                sigma_log_alpha = pm.HalfNormal("sigma_log_alpha", sigma=0.3)
+                log_alpha_raw = pm.Normal("log_alpha_raw", mu=0, sigma=1, shape=n_teams)
+                alpha_team = pm.Deterministic(
+                    "alpha_team",
+                    pt.exp(log_alpha_mean + sigma_log_alpha * log_alpha_raw)
+                )
+                # Each home/away score uses the appropriate team's alpha
+                alpha_home = alpha_team[df["i_home"].values]
+                alpha_away = alpha_team[df["i_away"].values]
+                pm.NegativeBinomial("home_obs", mu=home_theta, alpha=alpha_home,
+                                    observed=df[home_metric].values / K)
+                pm.NegativeBinomial("away_obs", mu=away_theta, alpha=alpha_away,
+                                    observed=df[away_metric].values / K)
             else:
-                # Informed prior. LogNormal(mu=2.7, sigma=0.4) has:
-                #   median exp(2.7) ≈ 14.9
-                #   ~90% mass in [7, 28]
-                # This places the bulk of prior mass on alpha values that produce
-                # predictive standard deviations close to observed NFL game variance.
-                alpha = pm.LogNormal("alpha", mu=2.7, sigma=0.4)
+                if alpha_prior == "weak":
+                    # Default since this project's inception: very loose Exp(1).
+                    alpha = pm.Exponential("alpha", lam=1.0)
+                else:
+                    # Informed prior. LogNormal(mu=2.7, sigma=0.4) has:
+                    #   median exp(2.7) ≈ 14.9
+                    #   ~90% mass in [7, 28]
+                    alpha = pm.LogNormal("alpha", mu=2.7, sigma=0.4)
 
-            pm.NegativeBinomial("home_obs", mu=home_theta, alpha=alpha,
-                                observed=df[home_metric].values / K)
-            pm.NegativeBinomial("away_obs", mu=away_theta, alpha=alpha,
-                                observed=df[away_metric].values / K)
+                pm.NegativeBinomial("home_obs", mu=home_theta, alpha=alpha,
+                                    observed=df[home_metric].values / K)
+                pm.NegativeBinomial("away_obs", mu=away_theta, alpha=alpha,
+                                    observed=df[away_metric].values / K)
 
         idata = pm.sample(samples)
 
@@ -369,9 +397,20 @@ def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
         home_adv = float(posterior["home"].values[chain, draw])
         home_term = None  # scalar use below
 
-    # Detect likelihood by presence/absence of alpha in posterior.
-    is_negbin = "alpha" in posterior
-    alpha = float(posterior["alpha"].values[chain, draw]) if is_negbin else None
+    # Detect likelihood. For NegBin, distinguish shared vs per-team alpha.
+    is_per_team_alpha = "alpha_team" in posterior
+    if is_per_team_alpha:
+        is_negbin = True
+        alpha_team_vec = posterior["alpha_team"].values[chain, draw, :]
+        alpha = None  # per-game lookup below
+    elif "alpha" in posterior:
+        is_negbin = True
+        alpha = float(posterior["alpha"].values[chain, draw])
+        alpha_team_vec = None
+    else:
+        is_negbin = False
+        alpha = None
+        alpha_team_vec = None
 
     season = df.copy()
 
@@ -413,8 +452,15 @@ def simulate_team_season(df: pd.DataFrame, idata: az.InferenceData,
         def _draw(mu, a):
             p = a / (a + mu)
             return K * np.random.negative_binomial(a, p)
-        season[home_metric] = _draw(home_theta, alpha)
-        season[away_metric] = _draw(away_theta, alpha)
+        if is_per_team_alpha:
+            # Per-game alpha — one for each game's scoring team
+            alpha_h = alpha_team_vec[season["i_home"].values]
+            alpha_a = alpha_team_vec[season["i_away"].values]
+            season[home_metric] = _draw(home_theta, alpha_h)
+            season[away_metric] = _draw(away_theta, alpha_a)
+        else:
+            season[home_metric] = _draw(home_theta, alpha)
+            season[away_metric] = _draw(away_theta, alpha)
     else:
         # Poisson sampling.
         season[home_metric] = K * np.random.poisson(home_theta)
